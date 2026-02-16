@@ -631,73 +631,77 @@
             guide() {
                 let text = "To explore " + firstLastOnlyNth(0, this.factors.length) + " factor in this term, press the down arrow. ";
                 let right = this.getRight();
-                let rightText = "";
-                if(right) {
-                    rightText = "To explore the next term in this " + this.parent.type + ", press the right arrow. ";
-                    let rightExp = right;
-                    if(right.isFactor){
-                        rightExp = right.parent.parent;
-                    }
-                    if(right.isTerm) {
-                        rightExp = right.parent;
-                    }
-                    //if this term and the destination are in different expressions
-                    if(this.parent != rightExp) {
-                        rightText = "To explore the ";
-                        //if the destination is in a denominator
-                        if(rightExp.type == "denominator") {
-                            rightText = rightText + "denominator of this quotient"
-                        //if the destination is in a step expression
-                        } else {
-                            let step = this.parent.parent;
-                            let rightComp = this.parent.rightComparator.textContent
-                            if(step.expressions.length == 2) {
-                                rightText = rightText + "right-hand side of this " + step.type;
-                                if(step.type == "inequality") {
-                                    rightText = rightText + " which is " + rightCompDict[rightComp] + " the left hand side of this " + step.type;
-                                }
-                            } else {
-                                rightText = rightText + "next expression in this statement which is " + rightCompDict[rightComp] + " this expression";
-                            }
-                        }
-                        rightText = rightText + ", press the right arrow. "
-                    }
-                    text = text + rightText;
+                let rightExp = right;
+                if(right && right.isFactor){
+                    rightExp = right.parent.parent;
+                }
+                if(right && right.isTerm) {
+                    rightExp = right.parent;
                 }
                 let left = this.getLeft();
-                let leftText = "";
-                if(left) {
-                    leftText = "To explore the previous term in this " + this.parent.type + ", press the left arrow. "
-                    let leftExp = left;
-                    if(left.isFactor){
+                let leftExp = left;
+                    if(left && left.isFactor){
                         leftExp = left.parent.parent;
                     }
-                    if(left.isTerm) {
+                    if(left && left.isTerm) {
                         leftExp = left.parent;
                     }
-                    //if this term and the destination are in different expressions
-                    if(this.parent != leftExp) {
-                        leftText = "To explore the ";
-                        //if the destination is in a denominator
-                        if(leftExp.type == "numerator") {
-                            leftText = leftText + "numerator of this quotient";
-                        //if the destination is in a step expression
-                        } else {
-                            let step = this.parent.parent;
-                            let leftComp = this.parent.leftComparator.textContent
-                            if(step.expressions.length == 2) {
-                                leftText = leftText + "left-hand side of this " + step.type;
-                                if(step.type == "inequality") {
-                                    leftText = leftText + " which is " + leftCompDict[leftComp] + " the right hand side of this " + step.type;
-                                }
+                let rightText = "";
+                if(right && left && right == left) {
+                    text = text + "To explore the " + rightExp.type + " of this quotient, press the right or left arrow. ";
+                } else {
+                    if(right) {
+                        rightText = "To explore the next term in this " + this.parent.type + ", press the right arrow. ";
+                        //if this term and the destination are in different expressions
+                        if(this.parent != rightExp) {
+                            rightText = "To explore the ";
+                            //right is a numerator or denominator
+                            if(rightExp.quotient) {
+                                rightText = rightText + rightExp.type + " of this quotient"
+                            //if the destination is in a step expression
                             } else {
-                                leftText = leftText + "next expression in this statement which is " + leftCompDict[leftComp] + " this expression";
+                                let step = this.parent.parent;
+                                let rightComp = this.parent.rightComparator.textContent
+                                if(step.expressions.length == 2) {
+                                    rightText = rightText + "right-hand side of this " + step.type;
+                                    if(step.type == "inequality") {
+                                        rightText = rightText + " which is " + rightCompDict[rightComp] + " the left hand side of this " + step.type;
+                                    }
+                                } else {
+                                    rightText = rightText + "next expression in this statement which is " + rightCompDict[rightComp] + " this expression";
+                                }
                             }
+                            rightText = rightText + ", press the right arrow. "
                         }
-                        
-                        leftText = leftText + ", press the left arrow. "
+                        text = text + rightText;
                     }
-                    text = text + leftText;
+                    let leftText = "";
+                    if(left) {
+                        leftText = "To explore the previous term in this " + this.parent.type + ", press the left arrow. "
+                        //if this term and the destination are in different expressions
+                        if(this.parent != leftExp) {
+                            leftText = "To explore the ";
+                            //if the destination is a numerator or denominator
+                            if(leftExp.quotient) {
+                                leftText = leftText + leftExp.type + " of this quotient";
+                            //if the destination is in a step expression
+                            } else {
+                                let step = this.parent.parent;
+                                let leftComp = this.parent.leftComparator.textContent
+                                if(step.expressions.length == 2) {
+                                    leftText = leftText + "left-hand side of this " + step.type;
+                                    if(step.type == "inequality") {
+                                        leftText = leftText + " which is " + leftCompDict[leftComp] + " the right hand side of this " + step.type;
+                                    }
+                                } else {
+                                    leftText = leftText + "next expression in this statement which is " + leftCompDict[leftComp] + " this expression";
+                                }
+                            }
+                            
+                            leftText = leftText + ", press the left arrow. "
+                        }
+                        text = text + leftText;
+                    }
                 }
                 let up = this.getUp();
                 if(up) {
@@ -710,15 +714,18 @@
             }
             getRight() {
                 let thisExpression = this.parent;
-                //if this is the only term in a numerator
-                if(thisExpression.type == "numerator" && thisExpression.terms.length == 1){
-                    let denominator = thisExpression.quotient.denominator;
-                    if(denominator.terms.length > 1) {
-                        return denominator;
-                    }
-                    return denominator.getDown();
-                }
                 let termIndex = thisExpression.terms.indexOf(this);
+                //if this term is in a numertor or denominator
+                if(thisExpression.quotient) {
+                    let target = thisExpression.type == "numerator" ? thisExpression.quotient.denominator : thisExpression.quotient.numerator;
+                    //if this is the last term in the numerator or denominator
+                    if(termIndex == thisExpression.terms.length - 1) {
+                        if(target.terms.length > 1) {
+                            return target;
+                        }
+                        return target.getDown();
+                    }
+                }
                 if(termIndex == thisExpression.terms.length - 1) {
                     //enable jumping accross comparators
                     if(thisExpression.constructor.name == "StepExpression") {
@@ -739,14 +746,18 @@
             getLeft() {
                 let thisExpression = this.parent;
                 let termIndex = thisExpression.terms.indexOf(this);
-                //if this is the only term in a denominator
-                if(thisExpression.type == "denominator" && thisExpression.terms.length == 1){
-                    let numerator = thisExpression.quotient.numerator;
-                    if(numerator.terms.length > 1) {
-                        return numerator;
+                //if this term is in a numertor or denominator
+                if(thisExpression.quotient) {
+                    let target = thisExpression.type == "numerator" ? thisExpression.quotient.denominator : thisExpression.quotient.numerator;
+                    //if this is the last term in the numerator or denominator
+                    if(termIndex == 0) {
+                        if(target.terms.length > 1) {
+                            return target;
+                        }
+                        return target.getDown();
                     }
-                    return numerator.getDown();
                 }
+                //enable jumping accros comparators
                 if(termIndex == 0) {
                     if(thisExpression.constructor.name == "StepExpression") {
                         let expIndex = thisExpression.parent.expressions.indexOf(thisExpression);
@@ -822,6 +833,18 @@
                 }
                 let text = "";
                 let right = this.getRight();
+                let left = this.getLeft();
+                //if either arrow can get the user to the numerator or denominator
+                if(right && left && right == left) {
+                    let target = right
+                    if(right.isFactor) {
+                        target = right.parent.parent
+                    }
+                    if(target.isTerm) {
+                        target = right.parent;
+                    }
+                    return "To explore the " + target.type + " of this quotient, press the right or left arrow. ";
+                }
                 if(right) {
                     text = "To explore the ";
                     //if the factor to the right of this one is in the same term as this factor
@@ -832,9 +855,16 @@
                         text = text + "next term in this " + this.parent.parent.type;
                     //if the object to the right of this factor is another expression
                     } else {
-                        //if this factor is the only factor in a numerator
+                        //if this factor is the only factor in a numerator or denominator
                         if(this.parent.parent.quotient) {
-                            text = text + "denominator of this quotient";
+                            let target = right;
+                            if(right.isFactor) {
+                                target = right.parent.parent;
+                            }
+                            if(right.isTerm) {
+                                target = right.parent;
+                            }
+                            text = text + target.type + " of this quotient";
                         //if this factor is the last factor in a step expression
                         } else {
                             let step = this.parent.parent.parent;
@@ -852,7 +882,6 @@
                     }
                     text = text + ", press the right arrow. "
                 }
-                let left = this.getLeft();
                 if(left) {
                     text = text + "To explore the "
                     //if the factor to the left of this one is in the same term as this factor
@@ -863,9 +892,16 @@
                         text = text + "previous term in this " + this.parent.parent.type;
                     //if the object to the right of this factor is another expression
                     } else {
-                        //if this factor is the only factor in a denominator
+                        //if this factor is the only factor in a numerator or denominator
                         if(this.parent.parent.quotient) {
-                            text = text + "numerator of this quotient";
+                            let target = left;
+                            if(left.isFactor) {
+                                target = left.parent.parent;
+                            }
+                            if(left.isTerm) {
+                                target = left.parent;
+                            }
+                            text = text + target.type + " of this quotient";
                         //if this factor is the first factor in a step expression
                         } else {
                             let step = this.parent.parent.parent;
@@ -925,13 +961,20 @@
                 if(!this.parent.factors) {
                     return false;
                 }
-                //if this is the only factor in a numerator
-                if(this.parent.factors.length == 1 && this.parent.parent.terms.length == 1 && this.parent.parent.type == "numerator") {
-                    let denominator = this.parent.parent.quotient.denominator;
-                    if(denominator.terms.length > 1) {
-                        return denominator;
+                //if in a numerator or denominator
+                if(this.parent.parent.quotient) {
+                    let term = this.parent;
+                    let expression = term.parent;
+                    let target = expression.type == "numerator" ? expression.quotient.denominator : expression.quotient.numerator;
+                    let termIndex = expression.terms.indexOf(term);
+                    let factorIndex = term.factors.indexOf(this);
+                    //if this is the last factor of the last term in the numerator or denominator
+                    if(factorIndex == term.factors.length - 1 && termIndex == expression.terms.length - 1) {
+                        if(target.terms.length > 1) {
+                            return target;
+                        }
+                        return target.getDown();
                     }
-                    return denominator.getDown();
                 }
                 let factorIndex = this.parent.factors.indexOf(this);
                 let termIndex = this.parent.parent.terms.indexOf(this.parent);
@@ -967,13 +1010,19 @@
                 if(!this.parent.factors) {
                     return false;
                 }
-                //if this is the only factor in a denominator
-                if(this.parent.factors.length == 1 && this.parent.parent.terms.length == 1 && this.parent.parent.type == "denominator") {
-                    let numerator = this.parent.parent.quotient.numerator;
-                    if(numerator.terms.length > 1) {
-                        return numerator;
+                if(this.parent.parent.quotient) {
+                    let term = this.parent;
+                    let expression = term.parent;
+                    let target = expression.type == "numerator" ? expression.quotient.denominator : expression.quotient.numerator;
+                    let termIndex = expression.terms.indexOf(term);
+                    let factorIndex = term.factors.indexOf(this);
+                    //if this is the first factor of the first term in the numerator or denominator
+                    if(factorIndex == 0 && termIndex == 0) {
+                        if(target.terms.length > 1) {
+                            return target;
+                        }
+                        return target.getDown();
                     }
-                    return numerator.getDown();
                 }
                 let factorIndex = this.parent.factors.indexOf(this);
                 let termIndex = this.parent.parent.terms.indexOf(this.parent);
@@ -1668,10 +1717,10 @@
                 return "This numerator contains " + pluralize("term", this.terms.length) + ". "
             }
             guide() {
-                let text = super.guide() + " To explore the denominator of this quotient, press the right arrow. To explore the "
+                let text = super.guide() + " To explore the denominator of this quotient, press the right or left arrow. To explore the "
                 let item = "term";
                 if(this.quotient.parent.factors.length == 1) {
-                    item = "expression";
+                    item = this.quotient.parent;
                 }
                 return text + item + " containing this quotient press the up arrow. ";
             }
@@ -1682,6 +1731,12 @@
                 return this.quotient.parent;
             }
             getRight() {
+                return this.getDenominator();
+            }
+            getRight() {
+                return this.getDenominator();
+            }
+            getDenominator() {
                 if(this.quotient.denominator.terms.lenth > 1) {
                     return this.quotient.denominator;
                 }
@@ -1704,7 +1759,7 @@
                 return "This denominator contains " + pluralize("term", this.terms.length) + ". "
             }
             guide() {
-                let text = super.guide() + " To explore the numerator of this quotient, press the left arrow. To explore the "
+                let text = super.guide() + " To explore the numerator of this quotient, press the right or left arrow. To explore the "
                 let item = "term";
                 if(this.quotient.parent.factors.length == 1) {
                     item = "expression";
@@ -1712,11 +1767,18 @@
                 return text + item + " containing this quotient press the up arrow. ";
             }
             getLeft() {
+                return this.getNumerator();
+            }
+            getRight() {
+                return this.getNumerator();
+            }
+            getNumerator() {
                 if(this.quotient.numerator.terms.length > 1) {
                     return this.quotient.numerator;
                 }
                 return this.quotient.numerator.getDown();
             }
+
         }
         class Radical extends Factor {
             constructor(parent, elementArray, hasExponent) {
