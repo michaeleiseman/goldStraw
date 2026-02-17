@@ -983,8 +983,8 @@
                     let thisExpression = this.parent.parent
                     //and this term is not the last term in its expression
                     if(termIndex < thisExpression.terms.length - 1) {
-                        let nextTerm = thisExpression.terms[termIndex + 1];
-                        return nextTerm;
+                        //return the next term
+                        return thisExpression.terms[termIndex + 1];
                     }
                     //if this term is the last term in its expression and the expression is a StepExpression
                     if(thisExpression.constructor.name == "StepExpression") {
@@ -1001,6 +1001,8 @@
                             }
                             return rightExp;
                         }
+                        //if this is the last expression in this math block
+                        return false;
                     }
                     return false;
                 }
@@ -1102,6 +1104,9 @@
                     return this.exponent;
                 }
                 return this.exponent.getDown();
+            }
+            getIndex() {
+                return false;
             }
             isJustANumber() {
                 return false;
@@ -1837,6 +1842,15 @@
                 }
                 return this.integrand.getDown();
             }
+            getIndex() {
+                if(!this.index) {
+                    return false;
+                }
+                if(this.index.terms.length > 1) {
+                    return this.index;
+                }
+                return this.index.getDown();
+            }
             isSimple() {
                 //non-integer radicals are not simple
                 if(this.exponent && !this.exponent.isJustANumber()) {
@@ -2232,6 +2246,9 @@
                 return "You cannot explore upwards from this math. You can only go down, left, or right."
             }
             getRight() {
+                if(!nextSib(this)) {
+                    return false;
+                }
                 advanceToNextChild();
             }
             getLeft() {
@@ -2303,25 +2320,140 @@
             }
             if(!focusObject.tagName) {
                 if(key == "ArrowDown") {
-                    navagateTo(focusObject.getDown());
+                    let down = focusObject.getDown();
+                    if(down) {
+                        navagateTo(down);
+                        return;
+                    }
+                    let text = "This is the " + focusObject.type;
+                    let desc = ""
+                    if(focusObject.type == "variable") {
+                        desc = pronounceLetter(focusObject.base.characters);
+                    }
+                    if(focusObject.type == "constant") {
+                        desc = integerToLiteral(focusObject.base.number);
+                    }
+                    text = text + " " + desc + ". You cannot explore downward from here. You can explore up";
+                    let left = focusObject.getLeft();
+                    let right = focusObject.getRight();
+                    if(left) {
+                        if(right) {
+                            text = text + ", left, or right"
+                        } else {
+                            text = text + " or left";
+                        }
+                        
+                    } else if(right) {
+                        text = text + " or right";
+                    }
+                    text = text + " from here."
+                    if(focusObject.exponent) {
+                        text = text + " You can also explore this" + focusObject.type + "'s exponent by pressing the E key."
+                    }
+                    if(focusObject.index) {
+                        text = text + " You can also explore this radical's index by pressing the E key."
+                    }
+                    speak(text, aaron);
                 }
                 if(key == "ArrowUp") {
                     navagateTo(focusObject.getUp());
                 }
                 if(key == "ArrowRight") {
-                    navagateTo(focusObject.getRight());
+                    let right = focusObject.getRight();
+                    if(right) {
+                        navagateTo(right);
+                        return;
+                    }
+                    if(focusObject.tagName) {
+                        return;
+                    }
+                    if(focusObject.constructor && focusObject.constructor.name == "Step") {
+                        speak("You have reached the end of the page. You cannot go forward from here.", aaron);
+                        return;
+                    }
+                    let end = focusObject;
+                    if(focusObject.isTerm) {
+                        end = focusObject.parent;
+                    }
+                    if(focusObject.isFactor) {
+                        end = focusObject.parent.parent;
+                    }
+                    let text = "You have reached the end of this " + end.type + " so you can not explore right from here. You can explore up"
+                    let left = focusObject.getLeft();
+                    let down = focusObject.getDown();
+                    if(left) {
+                        if(down) {
+                            text = text + ", left, or down"
+                        } else {
+                            text = text + " or left";
+                        }
+                        
+                    } else if(down) {
+                        text = text + " or down";
+                    }
+                    text = text + " from here."
+                    if(focusObject.exponent) {
+                        text = text + " You can also explore this" + focusObject.type + "'s exponent by pressing the E key."
+                    }
+                    if(focusObject.index) {
+                        text = text + " You can also explore this radical's index by pressing the E key."
+                    }
+                    speak(text, aaron);
                 }
                 if(key == "ArrowLeft") {
-                    navagateTo(focusObject.getLeft());
+                    let left = focusObject.getLeft();
+                    if(left) {
+                        navagateTo(left);
+                        return;
+                    }
+                    if(focusObject.tagName) {
+                        return;
+                    }
+                    let end = focusObject;
+                    if(focusObject.isTerm) {
+                        end = focusObject.parent;
+                    }
+                    if(focusObject.isFactor) {
+                        end = focusObject.parent.parent;
+                    }
+                    let text = "You have reached the start of this " + end.type + " so you can not explore left from here. You can explore up"
+                    let right = focusObject.getRight();
+                    let down = focusObject.getDown();
+                    if(right) {
+                        if(down) {
+                            text = text + ", right, or down"
+                        } else {
+                            text = text + " or right";
+                        }
+                    } else if(down) {
+                        text = text + " or down";
+                    }
+                    text = text + " from here."
+                    if(focusObject.exponent) {
+                        text = text + " You can also explore this" + focusObject.type + "'s exponent by pressing the E key."
+                    }
+                    if(focusObject.index) {
+                        text = text + " You can also explore this radical's index by pressing the E key."
+                    }
+                    speak(text, aaron);
                 }
                 if(key == "e" || key == "E") {
-                    navagateTo(focusObject.getExponent());
+                    let exponent = focusObject.getExponent();
+                    if(exponent) {
+                        navagateTo(exponent);
+                    } {
+                        speak("This " + focusObject.type + " does not have an exponent.");
+                    }
                 }
                 if(key == "i" || key == "I") {
-                    navagateTo(focusObject.getIndex());
+                    let index = focusObject.getIndex();
+                    if(index) {
+                        navagateTo(index);
+                    } {
+                        speak("This " + focusObject.type + " does not have an index.");
+                    }
                 }
             }
-            
         }
         function focus(object) {
             if(!object) {
@@ -2368,10 +2500,7 @@
         }
         function advanceToNextChild() {
             let element = nextSib(focusObject);
-            if(!element) {
-                speak("You have reached the end of the page. You cannot go forward from here.", aaron);
-                return;
-            }
+            
             if(element) {
                 if(element.tagName == "math") {
                     let mathObject = element.mathObject;
