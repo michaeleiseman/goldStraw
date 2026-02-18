@@ -2282,11 +2282,6 @@
         let leftCompDict = {"=": "equal to", "≠": "not equal to", "≈": "approximately numerically equal to", "≃": "asmptotically equal to", "≅": "congruent to", "≡": "defined by", ">": "greater than", "≥": "greater than or equal to", "<": "less than", "≤": "less than or equal to" }
         let rightCompDict = {"=": "equal to", "≠": "not equal to", "≈":"approximately numerically equal to", "≃": "asymptotically equal to", "≅": "congruent to", "≡": "used to define", ">": "less than", "≥": "less than or equal to", "<": "greater than", "≤": "greater than or equal to" }
         const isOperand = element => element.tagName == "mo" && termSymbols.some(item => element.textContent == item);
-        let steps = [];
-        let rootElements = document.getElementsByTagNameNS("http://www.w3.org/1998/Math/MathML", "math");
-        for(let rootElement of rootElements) {
-            steps.push(new Step(rootElement));
-        }
         let oldFocusObject = null;
         let focusObject = document.body;
         let synth = window.speechSynthesis;
@@ -2500,11 +2495,9 @@
         }
         function advanceToNextChild() {
             let element = nextSib(focusObject);
-            
             if(element) {
                 if(element.tagName == "math") {
-                    let mathObject = element.mathObject;
-                    focus(element.mathObject);
+                    focus(new Step(element));
                     return;
                 }
                 focus(element);
@@ -2571,7 +2564,7 @@
                     }
                 }
         }
-        //creates a text snippet that converts 1 to first, 2 to second, etc. up to 99th.
+        //creates a text snippet that converts 1 to first, 2 to second, etc.
         function nth(position) {
             var dictionary = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth", "eleventh", "twelfth", "thirteenth", "fourteenth", "fifteenth", "sixteenth", "seventeenth", "eighteenth", "nineteenth"];
             if(position === 0) {
