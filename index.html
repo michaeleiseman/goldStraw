@@ -320,7 +320,7 @@
                 let reducedArray = [...elementArray];
                 for(let i = 0; i < reducedArray.length; i++) {
                     let element = reducedArray[i];
-                    if(element.tagName == "mrow") {
+                    if(element.tagName == "mrow" || element.tagName == "semantics" || element.tagName == "mstyle" || element.tagName == "apply" || element.tagName == "mapply") {
                         reducedArray.splice(i, 1, ...element.children);
                         i--;
                     }
@@ -329,20 +329,20 @@
             }
             highlight() {
                 if(this.element) {
-                    this.element.classList.add("highlight");
+                    this.element.style.setProperty("background-color", "yellow");
                     return;
                 }
                 for(let element of this.elementArray) {
-                    element.classList.add("highlight");
+                    element.style.setProperty("background-color", "yellow");
                 }
             }
             unHighlight() {
                 if(this.element) {
-                    this.element.classList.remove("highlight");
+                    this.element.style.setProperty("background-color", "transparent");
                     return;
                 }
                 for(let element of this.elementArray) {
-                    element.classList.remove("highlight");
+                    element.style.setProperty("background-color", "transparent");
                 }
             }
         }
@@ -380,7 +380,6 @@
                     switch (element.tagName) {
                         case "mn":
                             this.factors.push(new Constant(this, [element]));
-                            elements.slice(i, i + 1);
                             break;
                         case "mi":
                             //if this is a function
@@ -619,10 +618,9 @@
                         if(step.expressions.length == 2) {
                             text = "The ";
                             let firstPart = expressionIndex == 0 ? "left" : "right";
-                            let comparator = step.expressions[0].rightComparator;
                             return text + firstPart + "-hand side of this " + step.type + " is ";
                         }
-                        return firstLastOnlyNth(termIndex, step.expressions.length) + " expression in this math statement is ";
+                        return firstLastOnlyNth(expressionIndex, step.expressions.length) + " expression in this math statement is ";
                     }
                     return "This " + thisExpression.type + " is ";
                 }
@@ -654,21 +652,21 @@
                         rightText = "To explore the next term in this " + this.parent.type + ", press the right arrow. ";
                         //if this term and the destination are in different expressions
                         if(this.parent != rightExp) {
-                            rightText = "To explore the ";
+                            rightText = "To explore ";
                             //right is a numerator or denominator
                             if(rightExp.quotient) {
-                                rightText = rightText + rightExp.type + " of this quotient"
+                                rightText = rightText + "the " + rightExp.type + " of this quotient"
                             //if the destination is in a step expression
                             } else {
                                 let step = this.parent.parent;
                                 let rightComp = this.parent.rightComparator.textContent
                                 if(step.expressions.length == 2) {
-                                    rightText = rightText + "right-hand side of this " + step.type;
+                                    rightText = rightText + "the right-hand side of this " + step.type;
                                     if(step.type == "inequality") {
                                         rightText = rightText + " which is " + rightCompDict[rightComp] + " the left hand side of this " + step.type;
                                     }
                                 } else {
-                                    rightText = rightText + "next expression in this statement which is " + rightCompDict[rightComp] + " this expression";
+                                    rightText = rightText + firstLastOnlyNth(step.expressions.indexOf(this.parent) + 1, step.expressions.length) + " expression in this statement which is " + rightCompDict[rightComp] + " this expression";
                                 }
                             }
                             rightText = rightText + ", press the right arrow. "
@@ -680,21 +678,21 @@
                         leftText = "To explore the previous term in this " + this.parent.type + ", press the left arrow. "
                         //if this term and the destination are in different expressions
                         if(this.parent != leftExp) {
-                            leftText = "To explore the ";
+                            leftText = "To explore ";
                             //if the destination is a numerator or denominator
                             if(leftExp.quotient) {
-                                leftText = leftText + leftExp.type + " of this quotient";
+                                leftText = leftText + "the " + leftExp.type + " of this quotient";
                             //if the destination is in a step expression
                             } else {
                                 let step = this.parent.parent;
                                 let leftComp = this.parent.leftComparator.textContent
                                 if(step.expressions.length == 2) {
-                                    leftText = leftText + "left-hand side of this " + step.type;
+                                    leftText = leftText + "the " + "left-hand side of this " + step.type;
                                     if(step.type == "inequality") {
                                         leftText = leftText + " which is " + leftCompDict[leftComp] + " the right hand side of this " + step.type;
                                     }
                                 } else {
-                                    leftText = leftText + "next expression in this statement which is " + leftCompDict[leftComp] + " this expression";
+                                    leftText = leftText + firstLastOnlyNth(step.expressions.indexOf(this.parent) - 1, step.expressions.length) + " expression in this statement which is " + leftCompDict[leftComp] + " this expression";
                                 }
                             }
                             
@@ -1279,8 +1277,10 @@
             describe() {
                 let text = ""
                 let index = this.parent.expressions.indexOf(this);
-                
                 let intro = "This expression";
+                if(index == 0 && this.leftComparator) {
+                    intro = intro + " is " + leftCompDict[this.leftComparator.textContent];
+                }
                 //if this the left-hand side an equation or inequality
                 if(this.parent.expressions.length == 2) {
                     intro = " The left-hand side of this ";
@@ -1292,12 +1292,12 @@
                         statement = "inequality";
                     }
                     intro = intro + statement;
-                    if(this.isSimple()) {
-                        return intro + " is " + this.pronounceSimple();
-                    }
                 }
-                
-                text = intro + " contains " + pluralize("term", this.terms.length) + ". ";
+                if(this.isSimple()) {
+                        text = intro + " is " + this.pronounceSimple();
+                } else {
+                    text = intro + " contains " + pluralize("term", this.terms.length) + ". ";
+                }
                 //if there is more than one expression in this step and either side of this expression is not an equality
                 if(this.parent.expressions.length > 1 && ((this.leftComparator && this.leftComparator.textContent != "=") || this.rightComparator && this.rightComparator.textContent != "=")) {
                     text = text + " This expression is ";
@@ -1324,10 +1324,10 @@
                         } else {
                             text = text + "inequality, ";
                         }
-                        text = text + "press the right arrow. ";
                     } else {
-                        text = text + "expression to the right of this one. ";
+                        text = text + "expression to the right of this one, ";
                     }
+                    text = text + "which is " + leftCompDict[this.rightComparator.textContent] + " this expression, press the right arrow. ";
                 }
                 if(index > 0) {
                     text = text + "To explore the ";
@@ -1338,10 +1338,11 @@
                         } else {
                             text = text + "inequality, ";
                         }
-                        text = text + "press the left arrow. ";
+                        
                     } else {
-                        text = text + "expression to the left of this one. "
+                        text = text + "expression to the left of this one, "
                     }
+                    text = text + "which is " + rightCompDict[this.leftComparator.textContent] + " this expression, press the left arrow. press the left arrow. ";
                 }
                 text = text + "To explore "
                 if(this.parent.expressions.length > 1) {
@@ -1487,7 +1488,7 @@
                 if(this.isSimple()) {
                     return intro + this.pronounceSimple() + ". ";
                 }
-                return intro + integerToLiteral(this.base.number) + " raised to an exponent."
+                return intro + pronounceLetter(this.base.characters) + " raised to an exponent."
             }
             guide() {
                 let text = "";
@@ -1533,7 +1534,7 @@
                 this.exponent = null;
                 if(hasExponent) {
                     this.base = new ConstantBase(this, [this.element.children[0]]);
-                    this.exponent = new Exponent(this, [this.reduce(this.element.children[1])])
+                    this.exponent = new Exponent(this, this.reduce([this.element.children[1]]))
                 } else {
                     this.base = new ConstantBase(this, [this.element]);
                 }
@@ -1614,16 +1615,35 @@
             }
             pronounceSimple() {
                 if(this.isJustANumber()) {
-                    if(this.terms[0].factors[0].base.number == 2) {
-                        return " squared ";
+                    let term = this.terms[0];
+                    let factor = term.factors[0];
+                    let number = factor.base.number;
+                    if(!term.isNeg) {
+                        if(number == 2) {
+                            return " squared ";
+                        }
+                        if(number == 3) {
+                            return " cubed ";
+                        }
                     }
-                    if(this.terms[0].factors[0].base.number == 3) {
-                        return " cubed ";
+                    if(term.isNeg) {
+                        let minus = "minus ";
+                        if(term.isPos) {
+                            minus = "plus or" + minus;
+                        }
+                        return "to the " + minus + integerToLiteral(term.factors[0].base.number);
                     }
                     return "to the " + nth(this.terms[0].factors[0].base.number) + " power ";
                 }
                 if(this.isARationalNumber()) {
-                    return "to the " + this.terms[0].factors[0].pronounceRationalNumber() + " power ";
+                    let minus = "";
+                    if(this.terms[0].isNeg) {
+                        minus = "minus ";
+                        if(this.terms[0].isPos) {
+                            minus = "plus or " + minus;
+                        }
+                    }
+                    return "to the " + minus + this.terms[0].factors[0].pronounceRationalNumber() + " power ";
                 }
                 let text = ""
                 for(let term of this.terms) {
@@ -2158,13 +2178,17 @@
         }
         class Step extends MathObject{
             constructor(element) {
-                super(null, [element])
+                super(null, [element]);
                 this.expressions = [];
                 let stepArray = Array.from(this.element.children);
+                stepArray = this.reduce(stepArray);
                 const isComparator = element => element.tagName == "mo" && equationSymbols.some(item => element.textContent.toLowerCase() == item);
                 let comparators = stepArray.filter(isComparator);
                 let leftComparator = null;
                 let leftIndex = -1;
+                if(comparators[0] == stepArray[0]) {
+                    leftComparator = comparators.splice(0, 1)[0];
+                }
                 for(let rightComparator of comparators) {
                     let rightIndex = stepArray.indexOf(rightComparator);
                     this.expressions.push(new StepExpression(this, stepArray.slice(leftIndex + 1, rightIndex), leftComparator, rightComparator));
@@ -2186,7 +2210,7 @@
                     return text + "which is " + this.pronounceSimple();
                 }
                 if(this.expressions.length == 1) {
-                    text = text + "containing " + pluralize("term", this.expressions.terms.length) + ". ";
+                    text = text + "containing " + pluralize("term", this.expressions[0].terms.length) + ". ";
                     return text;
                 }
                 if(this.expressions.length == 2) {
@@ -2204,11 +2228,11 @@
                     }
                     i++;
                 }
-                text = text + "statement that contains " + this.expressions.length + " expressions that "
+                text = text + "that contains " + this.expressions.length + " expressions that "
                 if(allEqual) {
                     text = text + "are all equal to each another. ";
                 } else {
-                    text = text + "are compared to each another. ";
+                    text = text + "are compared to each other. ";
                 }
                 return text;
             }
@@ -2227,11 +2251,10 @@
                 } else if(this.expressions.length > 2) {
                     text = intro + "the first expression in this statement" + press
                 }
-                let next = nextSib(this.element);
-                if(next && (next.tagName == "P" || next.tagName == "math")) {
+                if(getNextVisible()) {
                     text = text + " To skip over this expression and keep reading this page, press the right arrow.";
                 }
-                if(prevSib(this.element)) {
+                if(getPrevVisible()) {
                     text = text +  " To hear the item preceding this math, press the left arrow ";
                 }
                 return text;
@@ -2246,7 +2269,7 @@
                 return "You cannot explore upwards from this math. You can only go down, left, or right."
             }
             getRight() {
-                if(!nextSib(this)) {
+                if(!getNextVisible()) {
                     return false;
                 }
                 advanceToNextChild();
@@ -2296,14 +2319,78 @@
                 aaron = voices.find(voice => voice.name == "Aaron");
             }
         }
+        let visibleTextCollection = [];
+        let visIndex;
+        //this parses the web page into readable sections of text and math
+        function getVisibleText(element) {
+            if(element.tagName && element.tagName == "math") {
+                visibleTextCollection.push({element: element, object: new Step(element)});
+            } else if(element.nodeType == 1) {
+                if(containsTextNode(element)) {
+                    for(let child of element.childNodes) {
+                        if(child.nodeType == 3 && isVisible(element)) {
+                            let text = child.textContent.trim();
+                            if(text.length > 0) {
+                                visibleTextCollection.push({element: element, text: text});
+                            }
+                        }
+                        if(child.nodeType == 1) {
+                            if(child.tagName == "math") {
+                                visibleTextCollection.push({element: child, object: new Step(child)});
+                            } else {
+                                getVisibleText(child);
+                            }
+                        }
+                    }
+                } else {
+                    for(let child of element.children) {
+                        getVisibleText(child);
+                    }
+                }
+            }
+        }
+        function isVisible(element) {
+            if(element.nodeType != 1) {
+                return true;
+            }
+            if (element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) {
+                // Use innerText as it generally represents the rendered text
+                if(element.innerText) {
+                    const text = element.innerText.trim();
+                    if (text.length > 0) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+        function containsTextNode(element){
+            for(let node of element.childNodes) {
+                if(node.nodeType == 3) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        let unloaded = true;
         window.addEventListener("keydown", enableKeys, false);
         function enableKeys(event) {
-            event.preventDefault();
+            if(unloaded) {
+                getVisibleText(document.body);
+                unloaded = false;
+            }
+            if(document.activeElement == document.body) {
+                event.preventDefault();
+            }
+            if(document.activeElement.tagName == "input") {
+                return;
+            }
             if(synth.speaking) {synth.cancel()}
             let key = event.key;
             if(key == "ArrowRight" && focusObject.tagName) {
                 if(focusObject == document.body) {
-                    focus(document.body.children[0]);
+                    visIndex = 0;
+                    focus(visIndex);
                     return;
                 }
                 advanceToNextChild();
@@ -2450,10 +2537,21 @@
                 }
             }
         }
-        function focus(object) {
-            if(!object) {
-                return;
+        function focus(index) {
+            let visTextItem;
+            let object;
+            if(typeof index == "number") {
+                visTextItem = visibleTextCollection[index];
+                if(visTextItem.text) {
+                    object = visTextItem.element;
+                }
+                if(visTextItem.object) {
+                    object = visTextItem.object;
+                }
+            } else {
+                object = index;
             }
+            
             if(oldFocusObject) {
                 if(focusObject.tagName) {
                     unHighlight(focusObject);
@@ -2465,7 +2563,7 @@
             focusObject = object;
             if(object.tagName) {
                 highlight(object);
-                speak(object.textContent, aaron);
+                speak(visTextItem.text, aaron);
             } else {
                 object.highlight();
                 speak(object.describe(), samantha);
@@ -2473,10 +2571,10 @@
             }
         }
         function highlight(object) {
-            object.classList.add("highlight");
+            object.style.setProperty("background-color", "yellow");
         }
         function unHighlight(object) {
-            object.classList.remove("highlight");
+            object.style.setProperty("background-color", "transparent");
         }
         function navagateTo(target) {
             if(typeof target == "string") {
@@ -2494,52 +2592,34 @@
             synth.speak(utterThis);
         }
         function advanceToNextChild() {
-            let element = nextSib(focusObject);
-            if(element) {
-                if(element.tagName == "math") {
-                    focus(new Step(element));
-                    return;
-                }
-                focus(element);
+            let nextFocusObject = getNextVisible();
+            if(!nextFocusObject) {
+                speak("You have reached the end of the page. You cannot go forward from here.", aaron);
+                return;
             }
+            visIndex++
+            focus(visIndex);
         }
         function backup() {
-            let element = prevSib(focusObject);
-            if(element) {
-                if(element.tagName == "math") {
-                    focus(element.mathObject);
-                    return;
-                }
-                focus(element);
-                return
+            let nextFocusObject = getPrevVisible();
+            if(!nextFocusObject) {
+                speak("You have reached the start of the page. You cannot go backward from here.", aaron);
+                return;
             }
-            return false;
+            visIndex--
+            focus(visIndex);
         }
-        function nextSib(element) {
-            if(!element.tagName) {
-                element = element.element;
+        function getNextVisible() {
+            if(visIndex > visibleTextCollection.length - 1) {
+                return false;
             }
-            let nextElement = element;
-            while(nextElement && (nextElement == element || nextElement.nodeName == "#comment" || nextElement.textContent.trim() == "" && nextElement != null )) {
-                nextElement = nextElement.nextSibling;
-            }
-            if(nextElement.tagName == "math" || nextElement.tagName == "P") {
-                return nextElement;
-            }
-            return false;
+            return visibleTextCollection[visIndex + 1];
         }
-        function prevSib(element) {
-            if(!element.tagName) {
-                element = element.element;
+        function getPrevVisible() {
+            if(visIndex == 0) {
+                return false;
             }
-            let prevElement = element
-            while(prevElement && (prevElement == element || prevElement.nodeName == "#comment" || prevElement.textContent.trim() == "" && prevElement != null)) {
-                prevElement = prevElement.previousSibling;
-            }
-            if(prevElement.tagName == "math" || prevElement.tagName == "P") {
-                return prevElement;
-            }
-            return false;
+            return visibleTextCollection[visIndex - 1];
         }
         //creates a text snippet such as "one term" or "four factors"
         function pluralize(thing, num) {
@@ -2559,7 +2639,7 @@
                     } else if(index == 0) {
                         return "the first";
                     }
-                     else {
+                        else {
                         return "the " + nth(index + 1);
                     }
                 }
@@ -2643,6 +2723,7 @@
             }
             return letter;
         }
+
     </script>
 </body>
 </html>

@@ -1,0 +1,2417 @@
+class MathObject {
+    constructor(parent, elementArray) {
+        this.parent = parent;
+        this.elementArray = elementArray;
+        this.element = null;
+        if(elementArray.length == 1) {
+            this.element = elementArray[0];
+            this.element.mathObject = this;
+        }
+    }
+    reduce(elementArray){
+        let reducedArray = [...elementArray];
+        for(let i = 0; i < reducedArray.length; i++) {
+            let element = reducedArray[i];
+            if(element.tagName == "mrow" || element.tagName == "semantics" || element.tagName == "mstyle" || element.tagName == "apply" || element.tagName == "mapply") {
+                reducedArray.splice(i, 1, ...element.children);
+                i--;
+            }
+        }
+        return reducedArray;
+    }
+    highlight() {
+        if(this.element) {
+            this.element.style.setProperty("background-color", "yellow");
+            return;
+        }
+        for(let element of this.elementArray) {
+            element.style.setProperty("background-color", "yellow");
+        }
+    }
+    unHighlight() {
+        if(this.element) {
+            this.element.style.setProperty("background-color", "transparent");
+            return;
+        }
+        for(let element of this.elementArray) {
+            element.style.setProperty("background-color", "transparent");
+        }
+    }
+}
+class Term extends MathObject {
+    constructor(parent, elementArray) {
+        super(parent, elementArray);
+        this.factors = [];
+        this.isPos = true;
+        this.isNeg = false;
+        this.isTerm = true;
+        this.isExpression = false;
+        this.isFactor = false;
+        this.type = "term";
+        this.parse();
+    }
+    parse() {
+        let elements = this.reduce(this.elementArray);
+        let operatorSymbols = ["∫","⋅"]
+        let openFenceSymbols = ["(", "[", "{"];
+        let closeFenceSymbols = [")", "]", "}"];
+        let start = 0;
+        if(elements[0].tagName == "mo" && termSymbols.some(item => elements[0].textContent == item)) {
+            this.addoperand = elements[0].textContent
+            if(elements[0].textContent == "-" || elements[0].textContent == "–" || elements[0].textContent == "−") {
+                this.isPos = false;
+                this.isNeg = true;
+            }
+            if(elements[0].textContent == "±") {
+                this.isNeg = true;
+            }
+            start = 1;
+        }
+        for(let i = start; i < elements.length; i++) {
+            let element = elements[i];
+            switch (element.tagName) {
+                case "mn":
+                    this.factors.push(new Constant(this, [element]));
+                    break;
+                case "mi":
+                    //if this is a function
+                    if(functionNames.some(name => element.textContent == name) && elements[i + 1] && elements[i + 1].tagName == "mo" && elements[i + 1].textContent == "(") {
+                        let r = this.functionParse(elements.slice(i));
+                        this.factors.push(new Func(this, elements.slice(i, i + r)));
+                        i = i + r - 1;
+                        break;
+                    }
+                    //if this is a variable
+                    this.factors.push(new Variable(this, elements.slice(i, i + 1)));
+                    break;
+                case "msup":
+                    let firstChild = this.reduce([element.children[0]])[0];
+                    switch(firstChild.tagName) {
+                        case "mi":
+                            //WE NEED TO PROVIDE SUPPORT FOR INVERSE AND SQUARED TRIGONOMETRIC FUNCTIONS HERE
+
+                            //AND WHAT ABOUT HIGHER-ORDER DERIVATIVES?
+
+                            //if this is a derivative using prime notation as in f'(x)
+                            if(element.children[1].textContent == "′" && elements[i + 1] && elements[i + 1].textContent == "(" && elements[i + 2] && elements[i + 3] && elements[i + 3].textContent == ")") {
+                                this.factors.push(new Derivative(this, elements.slice(i, i + 4), false))
+                                i = i + 3;
+                                break;
+                            }
+                            //if this is an exponentiated variable
+                            this.factors.push(new Variable(this, elements.slice(i, i + 1), true));
+                            break;
+                        case "mn":
+                            //if this is an exponentiated constant
+                            this.factors.push(new Constant(this, elements.slice(i, i + 1), true));
+                            break;
+                        case "mo":
+                            //if this is an exponentiated grouping
+                            if(openFenceSymbols.some(item => item == firstChild.textContent)) {
+                                let secondChild = this.reduce([element.children[1]])[0];
+                                //if this is a differentiated expression using prime notation
+                                if(secondChild.textContent == "′") {
+                                    this.factors.push(new Derivative(this, elements.slice(i, i + 1)));
+                                    break;
+                                }
+                                this.factors.push(new Grouping(this, elements.slice(i, i + 1), true));
+                                break;
+                            }
+                    }
+                    break;
+                case "msubsup":
+                    let mainChar = this.reduce([element.children[0]])[0];
+                    //if this is a definite integral
+                    if(mainChar.textContent == "∫") {
+                        //we need to find the infinitesmal over which the integrand is integrated
+                        let k = this.integralParse(elements.slice(i));
+                        this.factors.push(new Integral(this, elements.slice(i, i + k), true));
+                        i = i + k - 1;
+                        break;
+                    }
+                    //if this is a subscripted and exponentiated variable
+                    this.factors.push(new Variable(this, elements.slice(i, i + 1), true, true));
+                    break;
+                case "mfrac":
+                    let numerator = this.reduce([element.children[0]]);
+                    let denominator = this.reduce([element.children[1]]) 
+                    //if this is a derivative using Leibniz notation
+                    if(numerator[0].tagName == "mi" && numerator[0].textContent == "d" && denominator[0].tagName == "mi" && denominator[0].textContent == "d" && denominator.length == 2) {
+                        //if this represents a derivative of a single dependent variable
+                        if(numerator.length > 1) {
+                            this.factors.push(new Derivative(this, elements.slice(i, i + 1), true));
+                            break;
+                        }
+                        //if this represents a derivative of a bracketed expression
+                        let k = this.groupingParse(elements.slice(1), "[", "]");
+                        this.factors.push(new Derivative(this, elements.slice(i, i + k + 1), true));
+                        i = i + k;
+                        break;
+                    }
+                    //if this is a quotient
+                    this.factors.push(new Quotient(this, elements.slice(i, i + 1)));
+                    break;
+                case "mo":
+                    switch (element.textContent) {
+                        case "(":
+                            let m = this.groupingParse(elements.slice(i), "(", ")");
+                            this.factors.push(new Grouping(this, elements.slice(i, i + m)));
+                            i = i + m -1;
+                            break;
+                        case "[":
+                            let n = this.groupingParse(elements.slice(i), "[", "]");
+                            this.factors.push(new Grouping(this, elements.slice(i, i + n)));
+                            i = i + n - 1;
+                            break;
+                        case "{":
+                            let p = this.groupingParse(elements.slice(i), "{", "}");
+                            this.factors.push(new Grouping(this, elements.slice(i, i + p)));
+                            i = i + p - 1;
+                            break;
+                        //if this is an indefinite integral
+                        case "∫":
+                            let k = integralParse(elements.slice(i));
+                            this.factors.push(new Integral(this, elements.slice(i, i + k)));
+                            i = i + k - 1;
+                            break;
+                        case "⋅":
+                            //NEED TO ADD MULTOPERAND OBJECT
+                            break;
+                        case "×":
+                            //NEED TO ADD MULTOPERAND OBJECT
+                            break;
+                    }
+                    break;
+                //if this is a radical
+                case "msqrt":
+                    this.factors.push(new Radical(this, elements.slice(i, i + 1)));
+                    break;
+                case "mroot":
+                    this.factors.push(new Radical(this, elements.slice(i, i + 1), true));
+                    break;
+                //if this a subscripted variable
+                case "msub":
+                    this.factors.push(new Variable(this, elements.slice(i, i + 1), false, true));
+                    break;
+                case "munder":
+                    //if this is a limit
+                    if(element.children[0].textContent == "lim") {
+                        let q = this.limitParse(elements);
+                        this.factors.push(new Limit(this, elements.slice(i, i + q)));
+                        i = i + q - 1;
+                    }
+                    break;
+            }
+        }
+    }
+    //finds the end of a non-exponentiated grouping
+    groupingParse(elements, open, close) {
+        let j = 1;
+        let k = 1;
+        while(k < elements.length && j > 0) {
+            let element = elements[k];
+            if(element.textContent == open) {
+                j++;
+            }
+            if(element.textContent == close) {
+                j--;
+            }
+            k++;
+        }
+        return k;
+    }
+    //finds the end of an integral
+    integralParse(elements) {
+        let i = 1;
+        while(elements[i + 1] && elements[i].textContent != "d") {i++}
+        return i + 2;
+    }
+    limitParse(elements) {
+        let i = 1;
+        while(i < elements.length && !(elements[i].tagName == "mo" && [...termSymbols, ...equationSymbols].some(item => elements.textContent == item))) {i++}
+        return i;
+    }
+    functionParse(elements) {
+        let i = 1;
+        while(i < elements.length && elements[i].textContent != ")") {i++};
+        return i + 1;
+    }
+    findFunction() {
+        for(let factor of this.factors) {
+            let func = factor.findFunction();
+            if(func){
+                return func
+            }
+        }
+        return false;
+    }
+    describe() {
+        let intro = this.guideIntro();
+        if(this.isSimple()) {
+            return intro + this.pronounceSimple();
+        }
+        let text = intro + "a term that has " + pluralize("factor", this.factors.length) + ". ";
+        let sign = "It is being added to this " + this.parent.type;
+        if(this.isNeg) {
+            sign = "It is being subtracted from this expression. "
+        }
+        if(this.isPos && this.isNeg) {
+            sign = "It is plus or minus. ";
+        }
+        return text + sign;
+    }
+    guideUp() {
+        let up = this.getUp();
+        let text = "To explore the ";
+        if(up.isExpression) {
+            text = text + up.type;
+        }
+        if(up.isFactor) {
+            text = text + up.type;
+        }
+        text = text + "that contains this " + this.type + " press the up arrow."
+    }
+    isSimple() {
+        for(let factor of this.factors) {
+            if(!factor.isSimple()) {
+                return false;
+            }
+        }
+        return true;
+    }
+    pronounceSimple() {
+        let text = "";
+        if(this.addoperand) {
+            text = "plus "
+            if(this.isNeg) {
+                text = "minus ";
+            }
+            if(this.isPos && this.isNeg) {
+                text = "plus or minus "
+            }
+        }
+        for(let factor of this.factors) {
+            text = text + factor.pronounceSimple() + " ";
+        }
+        return text;
+    }
+    guideIntro() {
+        let termIndex = this.parent.terms.indexOf(this);
+        let thisExpression = this.parent;
+        //if this factor is this only term in its expression
+        if(thisExpression.terms.length == 1) {
+            if(thisExpression.constructor.name == "StepExpression") {
+                let step = thisExpression.parent;
+                let expressionIndex = step.expressions.indexOf(this.parent);
+                let text = ""
+                if(step.expressions.length == 1) {
+                    return "This expression is ";
+                }
+                if(step.expressions.length == 2) {
+                    text = "The ";
+                    let firstPart = expressionIndex == 0 ? "left" : "right";
+                    return text + firstPart + "-hand side of this " + step.type + " is ";
+                }
+                return firstLastOnlyNth(expressionIndex, step.expressions.length) + " expression in this math statement is ";
+            }
+            return "This " + thisExpression.type + " is ";
+        }
+        return firstLastOnlyNth(termIndex, thisExpression.terms.length) + " term in this " + thisExpression.type + " is ";
+    }
+    guide() {
+        let text = "To explore " + firstLastOnlyNth(0, this.factors.length) + " factor in this term, press the down arrow. ";
+        let right = this.getRight();
+        let rightExp = right;
+        if(right && right.isFactor){
+            rightExp = right.parent.parent;
+        }
+        if(right && right.isTerm) {
+            rightExp = right.parent;
+        }
+        let left = this.getLeft();
+        let leftExp = left;
+            if(left && left.isFactor){
+                leftExp = left.parent.parent;
+            }
+            if(left && left.isTerm) {
+                leftExp = left.parent;
+            }
+        let rightText = "";
+        if(right && left && right == left) {
+            text = text + "To explore the " + rightExp.type + " of this quotient, press the right or left arrow. ";
+        } else {
+            if(right) {
+                rightText = "To explore the next term in this " + this.parent.type + ", press the right arrow. ";
+                //if this term and the destination are in different expressions
+                if(this.parent != rightExp) {
+                    rightText = "To explore ";
+                    //right is a numerator or denominator
+                    if(rightExp.quotient) {
+                        rightText = rightText + "the " + rightExp.type + " of this quotient"
+                    //if the destination is in a step expression
+                    } else {
+                        let step = this.parent.parent;
+                        let rightComp = this.parent.rightComparator.textContent
+                        if(step.expressions.length == 2) {
+                            rightText = rightText + "the right-hand side of this " + step.type;
+                            if(step.type == "inequality") {
+                                rightText = rightText + " which is " + rightCompDict[rightComp] + " the left hand side of this " + step.type;
+                            }
+                        } else {
+                            rightText = rightText + firstLastOnlyNth(step.expressions.indexOf(this.parent) + 1, step.expressions.length) + " expression in this statement which is " + rightCompDict[rightComp] + " this expression";
+                        }
+                    }
+                    rightText = rightText + ", press the right arrow. "
+                }
+                text = text + rightText;
+            }
+            let leftText = "";
+            if(left) {
+                leftText = "To explore the previous term in this " + this.parent.type + ", press the left arrow. "
+                //if this term and the destination are in different expressions
+                if(this.parent != leftExp) {
+                    leftText = "To explore ";
+                    //if the destination is a numerator or denominator
+                    if(leftExp.quotient) {
+                        leftText = leftText + "the " + leftExp.type + " of this quotient";
+                    //if the destination is in a step expression
+                    } else {
+                        let step = this.parent.parent;
+                        let leftComp = this.parent.leftComparator.textContent
+                        if(step.expressions.length == 2) {
+                            leftText = leftText + "the " + "left-hand side of this " + step.type;
+                            if(step.type == "inequality") {
+                                leftText = leftText + " which is " + leftCompDict[leftComp] + " the right hand side of this " + step.type;
+                            }
+                        } else {
+                            leftText = leftText + firstLastOnlyNth(step.expressions.indexOf(this.parent) - 1, step.expressions.length) + " expression in this statement which is " + leftCompDict[leftComp] + " this expression";
+                        }
+                    }
+                    
+                    leftText = leftText + ", press the left arrow. "
+                }
+                text = text + leftText;
+            }
+        }
+        let up = this.getUp();
+        if(up) {
+            text = text + "To explore the " + up.type + " containing this term, press the up arrow."
+        }
+        return text;
+    }
+    getDown() {
+        return this.factors[0];
+    }
+    getRight() {
+        let thisExpression = this.parent;
+        let termIndex = thisExpression.terms.indexOf(this);
+        //if this term is in a numertor or denominator
+        if(thisExpression.quotient) {
+            let target = thisExpression.type == "numerator" ? thisExpression.quotient.denominator : thisExpression.quotient.numerator;
+            //if this is the last term in the numerator or denominator
+            if(termIndex == thisExpression.terms.length - 1) {
+                if(target.terms.length > 1) {
+                    return target;
+                }
+                return target.getDown();
+            }
+        }
+        if(termIndex == thisExpression.terms.length - 1) {
+            //enable jumping accross comparators
+            if(thisExpression.constructor.name == "StepExpression") {
+                let expIndex = thisExpression.parent.expressions.indexOf(thisExpression);
+                if(expIndex < thisExpression.parent.expressions.length - 1) {
+                    let nextExpression = thisExpression.parent.expressions[expIndex + 1];
+                    if(nextExpression.terms.length > 1) {
+                        return nextExpression;
+                    }
+                    return nextExpression.getDown();
+                }
+            }
+            return false;
+        }
+        let nextTerm = this.parent.terms[termIndex + 1];
+        return nextTerm;
+    }
+    getLeft() {
+        let thisExpression = this.parent;
+        let termIndex = thisExpression.terms.indexOf(this);
+        //if this term is in a numertor or denominator
+        if(thisExpression.quotient) {
+            let target = thisExpression.type == "numerator" ? thisExpression.quotient.denominator : thisExpression.quotient.numerator;
+            //if this is the last term in the numerator or denominator
+            if(termIndex == 0) {
+                if(target.terms.length > 1) {
+                    return target;
+                }
+                return target.getDown();
+            }
+        }
+        //enable jumping accros comparators
+        if(termIndex == 0) {
+            if(thisExpression.constructor.name == "StepExpression") {
+                let expIndex = thisExpression.parent.expressions.indexOf(thisExpression);
+                if(expIndex > 0) {
+                    let prevExpression = thisExpression.parent.expressions[expIndex - 1];
+                    if(prevExpression.terms.length > 1) {
+                        return prevExpression;
+                    }
+                    return prevExpression.getDown();
+                }
+            }
+            return false;
+        }
+        let prevTerm = this.parent.terms[termIndex - 1];
+        if(prevTerm.factors.length == 1 && termIndex == 1 && !prevTerm.isNeg) {
+            return prevTerm.factors[0];
+        }
+        return prevTerm;
+    }
+    getUp() {
+        let expression = this.parent;
+        let factor = expression.parent;
+        if(expression.quotient) {
+            factor = expression.quotient;
+            if(expression.terms.length == 1) {
+                return factor
+            }
+            return expression;
+        }
+        //if this is the only term in this expression
+        if(expression.terms.length == 1) {
+            return factor;
+        }
+        //if this is not the only term in this expression
+        if(expression.constructor.name == "StepExpression") {
+            return expression;
+        }
+        return factor;
+    }
+    isJustANumber() {
+        return this.factors.length == 1 && this.factors[0].isJustANumber();
+    }
+    pronounceNumber() {
+        return this.factors[0].pronounceNumber;
+    }
+    isARationalNumber() {
+        return this.factors.length == 1 && this.factors[0].isARationalNumber();
+    }
+    pronounceRationalNumber() {
+        return this.factors[0].pronounceRationalNumber();
+    }
+}
+class Factor extends MathObject {
+    constructor(parent, elementArray) {
+        super(parent, elementArray);
+    }
+    findFunction() {
+        return false;
+    }
+    isSimple() {
+        return false;
+    }
+    describe() {
+        let intro = firstLastOnlyNth(this.parent.factors.indexOf(this), this.parent.factors.length) + " factor in this term is "
+        if(this.isSimple()) {
+            return intro + this.pronounceSimple();
+        }
+        return firstLastOnlyNth(this.parent.factors.indexOf(this), this.parent.factors.length) + " factor in this term is a " + this.constructor.name + ". ";
+    }
+    leftRightGuide() {
+        if(!this.parent.factors) {
+            return "";
+        }
+        let text = "";
+        let right = this.getRight();
+        let left = this.getLeft();
+        //if either arrow can get the user to the numerator or denominator
+        if(right && left && right == left) {
+            let target = right
+            if(right.isFactor) {
+                target = right.parent.parent
+            }
+            if(target.isTerm) {
+                target = right.parent;
+            }
+            return "To explore the " + target.type + " of this quotient, press the right or left arrow. ";
+        }
+        if(right) {
+            text = "To explore the ";
+            //if the factor to the right of this one is in the same term as this factor
+            if(right.isFactor && this.parent == right.parent) {
+                text = text + "next factor in this term";
+            //if the factor to the right of this one is in the same expression as this factor
+            } else if((right.isFactor && right.parent.parent == this.parent.parent) || (right.isTerm && right.parent == this.parent.parent)) {
+                text = text + "next term in this " + this.parent.parent.type;
+            //if the object to the right of this factor is another expression
+            } else {
+                //if this factor is the only factor in a numerator or denominator
+                if(this.parent.parent.quotient) {
+                    let target = right;
+                    if(right.isFactor) {
+                        target = right.parent.parent;
+                    }
+                    if(right.isTerm) {
+                        target = right.parent;
+                    }
+                    text = text + target.type + " of this quotient";
+                //if this factor is the last factor in a step expression
+                } else {
+                    let step = this.parent.parent.parent;
+                    let rightComp = this.parent.parent.rightComparator.textContent
+                    if(step.expressions.length == 2) {
+                        text = text + "right-hand side of this " + step.type;
+                        if(step.type == "inequality") {
+                            text = text + " which is " + rightCompDict[rightComp] + " the left hand side of this " + step.type;
+                        }
+                    } else {
+                        text = text + "next expression in this statement which is " + rightCompDict[rightComp] + " this expression";
+                    }
+                }
+                
+            }
+            text = text + ", press the right arrow. "
+        }
+        if(left) {
+            text = text + "To explore the "
+            //if the factor to the left of this one is in the same term as this factor
+            if((left.isFactor && this.parent == left.parent) ) {
+                text = text + "previous factor in this term";
+            //if the factor to the left of this one is in the same expression as this factor
+            } else if((left.isFactor && left.parent.parent == this.parent.parent) || (left.isTerm && left.parent == this.parent.parent)) {
+                text = text + "previous term in this " + this.parent.parent.type;
+            //if the object to the right of this factor is another expression
+            } else {
+                //if this factor is the only factor in a numerator or denominator
+                if(this.parent.parent.quotient) {
+                    let target = left;
+                    if(left.isFactor) {
+                        target = left.parent.parent;
+                    }
+                    if(left.isTerm) {
+                        target = left.parent;
+                    }
+                    text = text + target.type + " of this quotient";
+                //if this factor is the first factor in a step expression
+                } else {
+                    let step = this.parent.parent.parent;
+                    let leftComp = this.parent.parent.leftComparator.textContent
+                    if(step.expressions.length == 2) {
+                        text = text + "left-hand side of this " + step.type;
+                        if(step.type == "inequality") {
+                            text = text + " which is " + leftCompDict[rightComp] + " the right-hand side of this " + step.type;
+                        }
+                    } else {
+                        text = text + "previous expression in this statement which is " + leftCompDict[leftComp] + " this expression";
+                    }
+                }
+                
+            }
+            text = text + ", press the left arrow. "
+        }
+        return text;
+    }
+    guideIntro() {
+        //if this factor is this only factor in its term
+        if(this.parent.factors.length == 1) {
+            let termIndex = this.parent.parent.terms.indexOf(this.parent);
+            let thisExpression = this.parent.parent;
+            //and this term is the only term in its expression
+            if(thisExpression.terms.length == 1) {
+                if(thisExpression.constructor.name == "StepExpression") {
+                    let step = thisExpression.parent;
+                    let expressionIndex = step.expressions.indexOf(thisExpression);
+                    let text = ""
+                    if(step.expressions.length == 1) {
+                        return "This expression is ";
+                    }
+                    if(step.expressions.length == 2) {
+                        text = "The ";
+                        let firstPart = expressionIndex == 0 ? "left" : "right";
+                        let comparator = step.expressions[0].rightComparator;
+                        return text + firstPart + "-hand side of this " + step.type + " is ";
+                    }
+                    return firstLastOnlyNth(expressionIndex, step.expressions.length) + " expression in this math statement is ";
+                }
+                return "This " + this.parent.parent.type + " is ";
+            }
+            return firstLastOnlyNth(this.parent.parent.terms.indexOf(this.parent), this.parent.parent.terms.length) + "term in this " + thisExpression.type + " is ";
+        }
+        return firstLastOnlyNth(this.parent.factors.indexOf(this), this.parent.factors.length) + " factor in this term is ";
+    }
+    guideUp() {
+        let up = this.getUp();
+        let doing = " containing";
+        if(up.type == "function" || up.type == "limit" || up.type == "derivative") {
+            doing = " operating on";
+        }
+        return "To explore the " + up.type + doing + " this " + this.type + ", press the up arrow.";
+    }
+    getRight() {
+        if(!this.parent.factors) {
+            return false;
+        }
+        //if in a numerator or denominator
+        if(this.parent.parent.quotient) {
+            let term = this.parent;
+            let expression = term.parent;
+            let target = expression.type == "numerator" ? expression.quotient.denominator : expression.quotient.numerator;
+            let termIndex = expression.terms.indexOf(term);
+            let factorIndex = term.factors.indexOf(this);
+            //if this is the last factor of the last term in the numerator or denominator
+            if(factorIndex == term.factors.length - 1 && termIndex == expression.terms.length - 1) {
+                if(target.terms.length > 1) {
+                    return target;
+                }
+                return target.getDown();
+            }
+        }
+        let factorIndex = this.parent.factors.indexOf(this);
+        let termIndex = this.parent.parent.terms.indexOf(this.parent);
+        //if this is the last factor in its term 
+        if(factorIndex == this.parent.factors.length - 1){
+            let thisExpression = this.parent.parent
+            //and this term is not the last term in its expression
+            if(termIndex < thisExpression.terms.length - 1) {
+                //return the next term
+                return thisExpression.terms[termIndex + 1];
+            }
+            //if this term is the last term in its expression and the expression is a StepExpression
+            if(thisExpression.constructor.name == "StepExpression") {
+                let step = thisExpression.parent;
+                let expressionIndex = step.expressions.indexOf(thisExpression);
+                //if this is not the last expression in this step
+                if(expressionIndex < step.expressions.length - 1) {
+                    let rightExp = step.expressions[expressionIndex + 1];
+                    if(rightExp.terms.length == 1) {
+                        if(rightExp.terms[0].factors.length == 1) {
+                            return rightExp.terms[0].factors[0];
+                        }
+                        return rightExp.terms[0];
+                    }
+                    return rightExp;
+                }
+                //if this is the last expression in this math block
+                return false;
+            }
+            return false;
+        }
+        return this.parent.factors[factorIndex + 1];
+    }
+    getLeft() {
+        if(!this.parent.factors) {
+            return false;
+        }
+        if(this.parent.parent.quotient) {
+            let term = this.parent;
+            let expression = term.parent;
+            let target = expression.type == "numerator" ? expression.quotient.denominator : expression.quotient.numerator;
+            let termIndex = expression.terms.indexOf(term);
+            let factorIndex = term.factors.indexOf(this);
+            //if this is the first factor of the first term in the numerator or denominator
+            if(factorIndex == 0 && termIndex == 0) {
+                if(target.terms.length > 1) {
+                    return target;
+                }
+                return target.getDown();
+            }
+        }
+        let factorIndex = this.parent.factors.indexOf(this);
+        let termIndex = this.parent.parent.terms.indexOf(this.parent);
+        //if this is the first factor in its term
+        if(factorIndex == 0) {
+            //and this term is not the first term in its expression
+            if(termIndex > 0) {
+                let prevTerm = this.parent.parent.terms[termIndex - 1];
+                if(prevTerm.factors.length == 1 && !prevTerm.isNeg && termIndex == 1) {
+                    return prevTerm.factors[0];
+                }
+                return prevTerm;
+            }
+            let thisExpression = this.parent.parent;
+            //if this term is the first term in its expression and the expression is a StepExpression
+            if(thisExpression.constructor.name == "StepExpression") {
+                let step = thisExpression.parent;
+                let expressionIndex = step.expressions.indexOf(thisExpression);
+                //if this is not the first expression in this step
+                if(expressionIndex > 0) {
+                    let leftExp = step.expressions[expressionIndex - 1];
+                    if(leftExp.terms.length == 1) {
+                        if(leftExp.terms[0].factors.length == 1) {
+                            return leftExp.terms[0].factors[0];
+                        }
+                        return leftExp.terms[0];
+                    }
+                    return leftExp;
+                }
+            }
+            return false;
+        }
+        return this.parent.factors[factorIndex - 1];
+    }
+    getUp() {
+        let term = this.parent;
+        let expression = term.parent;
+        //if this is the only term in this expression
+        if(expression.terms.length == 1) {
+            //if this is the only factor in this term
+            if(term.factors.length == 1)  {
+                //if the term is negative
+                if(term.isNeg) {
+                    return term;
+                }
+                if(expression.quotient) {
+                    return expression.quotient;
+                }
+                if(expression.type == "integrand" || expression.constructor.name == "StepExpression" || expression.type == "exponent" || expression.parent.type == "function" || expression.parent.type == "derivative" || expression.parent.type == "limit" || expression.parent.type == "grouping") {
+                    return expression.parent;
+                }
+            //if there is more than one factor in this term
+            } else {
+                if(expression.type == "integrand" || expression.constructor.name == "StepExpression" || expression.type == "exponent" || expression.parent.type == "function" || expression.parent.type == "derivative" || expression.parent.type == "limit" || expression.parent.type == "grouping") {
+                    return expression.parent;
+                }
+                return expression;
+            }
+        //if there is more than one term in this expression
+        } else{
+            //if there is only one factor in this term
+            if(term.factors.length == 1) {
+                if(expression.quotient) {
+                    return expression;
+                }
+                return expression.parent;
+            }
+            //if there is more than one factor in this term
+            return term;
+        }
+    }
+    getExponent() {
+        if(!this.exponent) {
+            return false;
+        }
+        if(this.exponent.terms.length > 1) {
+            return this.exponent;
+        }
+        return this.exponent.getDown();
+    }
+    getIndex() {
+        return false;
+    }
+    isJustANumber() {
+        return false;
+    }
+    isARationalNumber() {
+        return false;
+    }
+}
+class Expression extends MathObject{
+    constructor(parent, elementArray) {
+        super(parent, elementArray);
+        this.terms = [];
+        this.type = "expression";
+        this.isTerm = false;
+        this.isExpression = true;
+        this.isFactor = false;
+        elementArray = this.reduce(this.elementArray);
+        let firstChild = elementArray[0];
+        let doesNotbeginWithAddOperand = [firstChild].filter(isOperand).length == 0;
+        let addoperands = [];
+        let parenCount = 0;
+        for (let i = 0; i < elementArray.length; i++){
+            if(elementArray[i].tagName == "mo") {
+                if(elementArray[i].textContent == "(" || elementArray[i].textContent == "[" || elementArray[i].textContent == "{") {parenCount++}
+                if(elementArray[i].textContent == ")" || elementArray[i].textContent == "]" || elementArray[i].textContent == "}") {parenCount--}
+                if(termSymbols.some(item => elementArray[i].textContent == item) && parenCount == 0) {
+                    addoperands.push(elementArray[i]);
+                }
+            }
+        }
+        //if the first term is positive
+        if(doesNotbeginWithAddOperand) {
+            //and there is more than one term
+            if(addoperands.length > 0) {
+                //parse this term up to the first add/subtract operand
+                this.terms.push(new Term(this, elementArray.slice(0, elementArray.indexOf(addoperands[0]))));
+            //and there is only one term
+            } else {
+                //parse this entire expression as one term
+                this.terms.push(new Term(this, elementArray));
+            }
+        }
+        for(let i = 0; i < addoperands.length; i++) {
+            if(i < addoperands.length - 1) {
+                this.terms.push(new Term(this, elementArray.slice(elementArray.indexOf(addoperands[i]), elementArray.indexOf(addoperands[i + 1]))));
+            } else {
+                this.terms.push(new Term(this, elementArray.slice(elementArray.indexOf(addoperands[i]))));
+            }
+        }
+    }
+    describe() {
+        if(this.isSimple()) {
+            if(this.type == "expression") {
+                return "This expression is " + this.pronounceSimple();
+            } else {
+                return "The expression in this " + this.type + " is " + this.pronounceSimple();
+            }
+            
+        }
+        return "This " + this.type + " contains " + pluralize("term", this.terms.length);
+    }
+    guide(){
+        let text = "To explore " + firstLastOnlyNth(0, this.terms.length) + " term of this " + this.type + ", press the down arrow. ";
+        let up = "";
+        if(this.parent.constructor.name == "Derivative") {
+            up = "To explore the derivative that is operating on this expression, press the up arrow.";
+        }
+        if(this.parent.constructor.name == "Limit") {
+            up = "To explore the limit statement that is operating on this expression, press the up arrow."
+        }
+        if(this.parent.constructor.name == "Func") {
+            up = "To explore the function that is operating on this expression, press the up arrow."
+        }
+        text = text + up;
+        return text;
+    }
+    isSimple() {
+        if(this.isJustANumber()){
+            return true;
+        }
+        if(this.isARationalNumber()) {
+            return true;
+        }
+        for(let term of this.terms) {
+            if(!term.isSimple()) {
+                return false;
+            }
+        }
+        return true;
+    }
+    pronounceSimple() {
+        let text = "";
+        for(let term of this.terms) {
+            text = text + term.pronounceSimple();
+        }
+        return text;
+    }
+    guideUp() {
+        let up = this.getUp();
+        return "To explore the " + up.type + " containing this " + this.type + ", press the up arrow. ";
+    }
+    getDown() {
+        let term = this.terms[0];
+        if(term.isNeg) {
+            return term;
+        }
+        if(term.factors.length == 1) {
+            return term.factors[0];
+        }
+        return term;
+    }
+    getUp() {
+        if(this.constructor.name == "StepExpression") {
+            return this.parent;
+        }
+        let factor = this.parent;
+        if(this.quotient) {
+            factor = this.quotient;
+        }
+        let term = factor.parent;
+        let expression = term.parent;
+        if(factor.exponent) {
+            return factor;
+        }
+        if(term.factors.length == 1 && expression.terms.length == 1) {
+            if(term.isNeg) {
+                return term;
+            }
+            return expression;
+        }
+        return factor;
+    }
+    isJustANumber() {
+        return this.terms.length == 1 && this.terms[0].isJustANumber();
+    }
+    pronounceNumber() {
+        return integerToLiteral(this.terms[0].factors[0].base.number);
+    }
+    isARationalNumber() {
+        return this.terms.length == 1 && this.terms[0].isARationalNumber();
+    }
+    pronounceRationalNumber() {
+        return this.terms[0].factors[0].pronounceRationalNumber();
+    }
+    //find a named function in this expression
+    findFunction() {
+        for(let term of this.terms) {
+            let func = term.findFunction();
+            if(func){
+                return func
+            }
+        }
+        return false;
+    }
+}
+class StepExpression extends Expression {
+    constructor(parent, elementArray, leftComparator, rightComparator) {
+        super(parent, elementArray);
+        if(leftComparator) {
+            this.leftComparator = leftComparator;
+        }
+        if(rightComparator) {
+            this.rightComparator = rightComparator;
+        }
+        this.type = "expression"
+        this.isTerm = false;
+        this.isExpression = true;
+        this.isFactor = false;
+    }
+    describe() {
+        let text = ""
+        let index = this.parent.expressions.indexOf(this);
+        let intro = "This expression";
+        if(index == 0 && this.leftComparator) {
+            intro = intro + " is " + leftCompDict[this.leftComparator.textContent];
+        }
+        //if this the left-hand side an equation or inequality
+        if(this.parent.expressions.length == 2) {
+            intro = " The left-hand side of this ";
+            if(index == 1) {
+                intro = " The right-hand side of this ";
+            }
+            let statement = "equation";
+            if(index == 0 && this.rightComparator.textContent != "=") {
+                statement = "inequality";
+            }
+            intro = intro + statement;
+        }
+        if(this.isSimple()) {
+                text = intro + " is " + this.pronounceSimple();
+        } else {
+            text = intro + " contains " + pluralize("term", this.terms.length) + ". ";
+        }
+        //if there is more than one expression in this step and either side of this expression is not an equality
+        if(this.parent.expressions.length > 1 && ((this.leftComparator && this.leftComparator.textContent != "=") || this.rightComparator && this.rightComparator.textContent != "=")) {
+            text = text + " This expression is ";
+            let left = "equal to";
+            let right = "equal to";
+            if(index == 0) {
+                text = text + leftCompDict[this.rightComparator.textContent] + " the expression to its right. "
+            } else if(index == this.parent.expressions.length - 1) {
+                text = text + rightCompDict[this.leftComparator.textContent] + " the expression to its left. "
+            } else { text = text + leftCompDict[this.rightComparator.textContent] + " the expression to its right, and " + rightCompDict[this.leftComparator.textContent] + " the expression to its left. ";
+            }
+        }
+        return text;
+    }
+    guide() {
+        let text = "To explore " + firstLastOnlyNth(0, this.terms.length) + " term in this expression, press the down arrow. ";
+        let index = this.parent.expressions.indexOf(this);
+        if(index < this.parent.expressions.length - 1) {
+            text = text + "To explore the "
+            if(this.parent.expressions.length == 2) {
+                text = text + "right-hand side of this ";
+                if(this.rightComparator.textContent = "=") {
+                    text = text + "equation, ";
+                } else {
+                    text = text + "inequality, ";
+                }
+            } else {
+                text = text + "expression to the right of this one, ";
+            }
+            text = text + "which is " + leftCompDict[this.rightComparator.textContent] + " this expression, press the right arrow. ";
+        }
+        if(index > 0) {
+            text = text + "To explore the ";
+            if(this.parent.expressions.length == 2) {
+                text = text + "left-hand side of this ";
+                if(this.leftComparator.textContent == "=") {
+                    text = text + "equation, ";
+                } else {
+                    text = text + "inequality, ";
+                }
+                
+            } else {
+                text = text + "expression to the left of this one, "
+            }
+            text = text + "which is " + rightCompDict[this.leftComparator.textContent] + " this expression, press the left arrow. press the left arrow. ";
+        }
+        text = text + "To explore "
+        if(this.parent.expressions.length > 1) {
+            text = text + "the " + this.parent.type + " containing this expression, ";
+        } else {
+            text = text + "reading this page, ";
+        }
+        text = text + "press the up arrow. "
+        return text;
+    }
+    getRight() {
+        let index = this.parent.expressions.indexOf(this);
+        if(index == this.parent.expressions.length - 1) {
+            return false;
+        }
+        let nextExpression = this.parent.expressions[index + 1];
+        if(nextExpression.terms.length > 1) {
+            return nextExpression;
+        }
+        return nextExpression.getDown();
+    }
+    getLeft() {
+        let index = this.parent.expressions.indexOf(this);
+        if(index == 0) {
+            return false;
+        }
+        let prevExpression = this.parent.expressions[index - 1];
+        if(prevExpression.terms.length > 1) {
+            return prevExpression;
+        }
+        return prevExpression.getDown();
+    }
+}
+class Grouping extends Factor {
+    constructor(parent, elementArray, hasExponent) {
+        super(parent, elementArray);
+        let baseArray = elementArray.slice(1, elementArray.length - 1);
+        this.isTerm = false;
+        this.isExpression = false;
+        this.isFactor = true;
+        this.type = "grouping";
+        this.exponent = null;
+        if(hasExponent) {
+            baseArray = [this.element.children[0]];
+            this.exponent = new Exponent(this, [this.element.children[1]]);
+        }
+        this.base = new GroupingBase(this, baseArray);
+    }
+    findFunction() {
+        let func = this.base.findFunction();
+        if(func) {
+            return func
+        }
+        if(this.exponent) {
+            func = this.exponent.findFunction();
+            if(func) {
+                return func;
+            }
+        }
+        return false;
+    }
+    describe() {
+        let intro = super.guideIntro();
+        intro = intro + "a grouping ";
+        let text = intro + " containing "
+        if(this.base.isSimple()) {
+            text = text + this.base.pronounceSimple();
+        } else {
+            text = text + pluralize("term", this.base.terms.length);
+        } 
+        if(this.exponent) {
+            text = text + " and has an exponent ";
+            if(this.exponent.isSimple()) {
+                text = text + "of " + this.exponent.pronounceSimple()
+            } else {
+                text = text + "with " + pluralize("term", this.exponent.terms.length);
+            }
+        }
+        return text = text + ". ";
+    }
+    guide(){
+        let text = "To explore " + firstLastOnlyNth(0, this.base.terms.length) +  "term in this grouping, press the down arrow. ";
+        if(this.exponent) {
+            text = text + "To explore the exponent for this grouping, press the E key. "
+        }
+        text = text + super.leftRightGuide();
+        return text + super.guideUp();
+        //return text + "To explore the " + item + " containing this grouping, press the up arrow key. ";
+    }
+    getDown() {
+        return this.base.getDown();
+    }
+}
+class GroupingBase extends Expression {
+    constructor(parent, elementArray) {
+        super(parent, elementArray);
+        this.type = "grouping";
+        this.isTerm = false;
+        this.isExpression = true;
+        this.isFactor = false;
+    }
+    guide() {
+        let text = super.guide();
+        text = text + super.guideUp();
+        return text;
+    }
+}
+class Variable extends Factor{
+    constructor(parent, elementArray, hasExponent, hasSubscript) {
+        super(parent, elementArray);
+        this.isTerm = false;
+        this.isExpression = false;
+        this.isFactor = true;
+        this.type = "variable";
+        this.exponent = null;
+        this.subscript = null;
+        if(hasExponent && hasSubscript) {
+            this.base = new VariableBase(this, [this.element.children[0]]);
+            this.subscript = this.element.children[1].textContent;
+            this.exponent = new Exponent(this, [this.element.children[2]]);
+        } else if(hasExponent) {
+            this.base = new VariableBase(this, [this.element.children[0]]);
+            this.exponent = new Exponent(this, this.reduce([this.element.children[1]]));
+        } else if(hasSubscript) {
+            this.base = new VariableBase(this, [this.element.children[0]]);
+            this.subscript = this.element.children[1].textContent;
+        } else {
+            this.base = new VariableBase(this, [this.element]);
+        };
+    }
+    findFunction() {
+        if(this.exponent) {
+            let func = this.exponent.findFunction();
+            if(func) {
+                return func;
+            }
+        }
+        return false;
+    }
+    describe() {
+        let intro = super.guideIntro();
+        intro = intro + "the variable ";
+        if(this.isSimple()) {
+            return intro + this.pronounceSimple() + ". ";
+        }
+        return intro + pronounceLetter(this.base.characters) + " raised to an exponent."
+    }
+    guide() {
+        let text = "";
+        if(this.exponent) {
+            text = "To explore the exponent for this variable, press the E key. "
+        }
+        text = text + super.leftRightGuide();
+        return text + super.guideUp();
+    }
+    isSimple() {
+        return !this.exponent || (this.exponent && (this.exponent.isJustANumber() || this.exponent.isARationalNumber()));
+    }
+    pronounceSimple() {
+        let base = pronounceLetter(this.base.characters);
+        if(this.exponent) {
+            return base + " " + this.exponent.pronounceSimple();
+        }
+        return base;
+    }
+    getDown() {
+        if(!this.exponent) {
+            return false;
+        }
+        if(this.exponent.terms.length > 1) {
+            return this.exponent;
+        }
+        return this.exponent.getDown();
+    }
+}
+class VariableBase extends MathObject{
+    constructor(parent, elementArray) {
+        super(parent, elementArray);
+        this.characters = this.element.textContent;
+    }
+}
+class Constant extends Factor {
+    constructor(parent, elementArray, hasExponent) {
+        super(parent, elementArray);
+        this.isTerm = false;
+        this.isExpression = false;
+        this.isFactor = true;
+        this.type = "constant";
+        this.exponent = null;
+        if(hasExponent) {
+            this.base = new ConstantBase(this, [this.element.children[0]]);
+            this.exponent = new Exponent(this, this.reduce([this.element.children[1]]))
+        } else {
+            this.base = new ConstantBase(this, [this.element]);
+        }
+    }
+    findFunction() {
+        if(this.exponent) {
+            let func = this.exponent.findFunction();
+            if(func) {
+                return func;
+            }
+        }
+        return false;
+    }
+    describe() {
+        let intro = super.guideIntro();
+        intro = intro + "the constant ";
+        if(this.isSimple()) {
+            return intro + this.pronounceSimple() + ". ";
+        }
+        return intro + integerToLiteral(this.base.number) + " raised to an exponent."
+    }
+    guide() {
+        let text = "";
+        if(this.exponent) {
+            text = "To explore the exponent for this constant, press the E key. "
+        }
+        text = text + super.leftRightGuide();
+        return text + super.guideUp();
+    }
+    getDown() {
+        if(!this.exponent) {
+            return false;
+        }
+        if(this.exponent.terms.length > 1) {
+            return this.exponent;
+        }
+        return this.exponent.getDown();
+    }
+    isJustANumber() {
+        return !this.exponent;
+    }
+    isSimple() {
+        return !this.exponent || (this.exponent && (this.exponent.isJustANumber() || this.exponent.isARationalNumber()));
+    }
+    pronounceSimple() {
+        let base = integerToLiteral(this.base.number)
+        if(this.exponent) {
+            return base + " " + this.exponent.pronounceSimple() + " ";
+        }
+        return base;
+    }
+}
+class ConstantBase extends MathObject {
+    constructor(parent, elementArray) {
+        super(parent, elementArray);
+        this.exponent = null;
+        this.number = Number(this.element.textContent);
+    }
+}
+class Exponent extends Expression {
+    constructor(parent, elementArray) {
+        super(parent, elementArray);
+        this.isTerm = false;
+        this.isExpression = true;
+        this.isFactor = false;
+        this.base = null;
+        this.type = "exponent";
+    }
+    describe() {
+        if(this.isSimple()) {
+            return "This exponent is " + this.pronounceSimple();
+        }
+        return "This exponent has " + pluralize("term", this.terms.length) + ". "
+    }
+    guide() {
+        let text = " To explore " + firstLastOnlyNth(0, this.terms.length) + " in this exponent, press the down arrow. "
+        text = text + "To explore the " + this.parent.constructor.name.toLowerCase() + " that this exponent belongs to, press the up arrow. ";
+    }
+    pronounceSimple() {
+        if(this.isJustANumber()) {
+            let term = this.terms[0];
+            let factor = term.factors[0];
+            let number = factor.base.number;
+            if(!term.isNeg) {
+                if(number == 2) {
+                    return " squared ";
+                }
+                if(number == 3) {
+                    return " cubed ";
+                }
+            }
+            if(term.isNeg) {
+                let minus = "minus ";
+                if(term.isPos) {
+                    minus = "plus or" + minus;
+                }
+                return "to the " + minus + integerToLiteral(term.factors[0].base.number);
+            }
+            return "to the " + nth(this.terms[0].factors[0].base.number) + " power ";
+        }
+        if(this.isARationalNumber()) {
+            let minus = "";
+            if(this.terms[0].isNeg) {
+                minus = "minus ";
+                if(this.terms[0].isPos) {
+                    minus = "plus or " + minus;
+                }
+            }
+            return "to the " + minus + this.terms[0].factors[0].pronounceRationalNumber() + " power ";
+        }
+        let text = ""
+        for(let term of this.terms) {
+            text = text + term.pronounceSimple();
+        }
+        return text;
+    }
+}
+class Quotient extends Factor {
+    constructor(parent, elementArray) {
+        super(parent, elementArray);
+        this.isTerm = false;
+        this.isExpression = false;
+        this.isFactor = true;
+        this.type = "quotient";
+        this.numerator = new Numerator(this.parent, this.reduce([this.element.children[0]]), this);
+        this.denominator = new Denominator(this.parent, this.reduce([this.element.children[1]]), this);
+    }
+    findFunction() {
+        let func = this.numerator.findFunction();
+        if(func) {
+            return func;
+        }
+        func = this.denominator.findFunction();
+        if(func) {
+            return func;
+        }
+        return false;
+    }
+    describe() {
+        let intro = super.guideIntro();
+        if(this.isSimpleByItself()) {
+            return intro + "the quotient " + this.pronounceSimple() + ". "
+        }
+        return intro + "a quotient with " + pluralize("term", this.numerator.terms.length) + " in the numerator and " + pluralize("term", this.denominator.terms.length) + " in the denominator. ";
+    }
+    guide() {
+        let text = "To explore the numerator of this quotient, press the down arrow. ";
+        text = text + super.leftRightGuide();
+        return text + super.guideUp();
+    }
+    isSimple() {
+        if(this.isARationalNumber()) {
+            return true;
+        }
+        //if this quotient is in a mono-termed expression only factor in its term
+        if(this.parent.parent.terms.length == 1) {
+            //if both the numerator and denominators are simple and monotermed, and the term containing the quotient is the last term in its expression
+            if(this.numerator.terms.length == 1 && this.numerator.isSimple() && this.denominator.terms.length == 1 && this.denominator.isSimple() && this.parent.parent.terms.indexOf(this.parent) == this.parent.parent.terms.length - 1) {
+                return true;
+            }
+        }
+        return false;
+    }
+    isSimpleByItself() {
+        if(this.isARationalNumber()) {
+            return true;
+        }
+        if(this.numerator.terms.length == 1 && this.numerator.isSimple() && this.denominator.terms.length == 1 && this.denominator.isSimple()) {
+            return true;
+        }
+        return false;
+    }
+    getDown() {
+        if(this.numerator.terms.length > 1) {
+            return this.numerator;
+        }
+        return this.numerator.getDown();
+    }
+    isARationalNumber() {
+        return this.numerator.isJustANumber() && this.denominator.isJustANumber();
+    }
+    pronounceRationalNumber() {
+        return integerToLiteral(this.numerator.terms[0].factors[0].base.number) + " " + nth(this.denominator.terms[0].factors[0].base.number) + "s";
+    }
+    pronounceSimple() {
+        if(this.isARationalNumber()) {
+            return this.pronounceRationalNumber();
+        }
+        return this.numerator.pronounceSimple() + " over " + this.denominator.pronounceSimple(); 
+    }
+}
+class Numerator extends Expression {
+    constructor(parent, elementArray, quotient) {
+        super(parent, elementArray);
+        this.isTerm = false;
+        this.isExpression = true;
+        this.isFactor = false;
+        this.quotient = quotient;
+        this.type = "numerator";
+    }
+    describe() {
+        if(this.isSimple()){
+            return "This numerator is " + this.pronounceSimple();
+        }
+        return "This numerator contains " + pluralize("term", this.terms.length) + ". "
+    }
+    guide() {
+        let text = super.guide() + " To explore the denominator of this quotient, press the right or left arrow. To explore the "
+        let item = "term";
+        if(this.quotient.parent.factors.length == 1) {
+            item = this.quotient.parent;
+        }
+        return text + item + " containing this quotient press the up arrow. ";
+    }
+    getUp() {
+        if(this.quotient.parent.factors.length == 1) {
+            return this.quotient.parent.parent;
+        }
+        return this.quotient.parent;
+    }
+    getRight() {
+        return this.getDenominator();
+    }
+    getRight() {
+        return this.getDenominator();
+    }
+    getDenominator() {
+        if(this.quotient.denominator.terms.lenth > 1) {
+            return this.quotient.denominator;
+        }
+        return this.quotient.denominator.getDown();
+    }
+}
+class Denominator extends Expression {
+    constructor(parent, elementArray, quotient) {
+        super(parent, elementArray);
+        this.isTerm = false;
+        this.isExpression = true;
+        this.isFactor = false;
+        this.quotient = quotient;
+        this.type = "denominator";
+    }
+    describe() {
+        if(this.isSimple()){
+            return "This denominator is " + this.pronounceSimple();
+        }
+        return "This denominator contains " + pluralize("term", this.terms.length) + ". "
+    }
+    guide() {
+        let text = super.guide() + " To explore the numerator of this quotient, press the right or left arrow. To explore the "
+        let item = "term";
+        if(this.quotient.parent.factors.length == 1) {
+            item = "expression";
+        }
+        return text + item + " containing this quotient press the up arrow. ";
+    }
+    getLeft() {
+        return this.getNumerator();
+    }
+    getRight() {
+        return this.getNumerator();
+    }
+    getNumerator() {
+        if(this.quotient.numerator.terms.length > 1) {
+            return this.quotient.numerator;
+        }
+        return this.quotient.numerator.getDown();
+    }
+
+}
+class Radical extends Factor {
+    constructor(parent, elementArray, hasExponent) {
+        super(parent, elementArray);
+        this.isTerm = false;
+        this.isExpression = false;
+        this.isFactor = true;
+        this.exponent = null;
+        if(hasExponent) {
+            this.radicand = new Radicand(this, this.reduce(this.element.children[0]));
+            this.exponent = new Exponent(this, this.reduce(this.element.children[1]));
+        } else {
+            this.radicand = new Radicand(this, this.reduce(Array.from(this.element.children)));
+        }
+        this.type = "square root";
+        if(this.exponent) {
+            this.type = "radical";
+        }
+    }
+    describe() {
+        let intro = super.guideIntro();
+        if(this.isSimple()) {
+            return intro + "a radical that takes " + this.pronounceSimple();
+        }
+        let item = " square root ";
+        if(this.exponent) {
+            item = " radical ";
+        }
+        let text = intro + "a " + item + " containing ";
+        let description = pluralize("term", this.radicand.terms.length) + " terms.";
+        if(this.radicand.isSimple()) {
+            description = "the expression " + this.radicand.pronounceSimple() + ". ";
+        }
+        text = text + description;
+        if(this.exponent) {
+            text = text + " The index for this radical is "
+            if(this.exponent.isJustANumber()) {
+                text = text + integerToLiteral(this.exponent.terms[0].factors[0].base.number) + ". "
+            } else {
+                text = text + this.exponent.describe() + ". ";
+            }
+        }
+        return text;
+    }
+    guide(){
+        let text = "To explore the " + pluralize("term", this.radicand.terms.length) + " in this radical, press the down arrow. ";
+        if(this.exponent) {
+            text = text + "To explore the index for this radical, press the eye key. "
+        }
+        text = text + super.leftRightGuide();
+        return text + super.guideUp();
+    }
+    getDown() {
+        if(this.radicand.terms.length > 1) {
+            return this.radicand;
+        }
+        return this.integrand.getDown();
+    }
+    getIndex() {
+        if(!this.index) {
+            return false;
+        }
+        if(this.index.terms.length > 1) {
+            return this.index;
+        }
+        return this.index.getDown();
+    }
+    isSimple() {
+        //non-integer radicals are not simple
+        if(this.exponent && !this.exponent.isJustANumber()) {
+            return false;
+        }
+        //multi termed radicands make for non-simple radicals
+        if(this.radicand.terms.length > 1){
+            return false;
+        }
+        //more than one factor in the radicand is not simple
+        if(this.radicand.terms[0].factors.length > 1) {
+            return false;
+        }
+        //the factor in the radicand must be simple for the radical to be simple
+        if(!this.radicand.terms[0].factors[0].isSimple()) {
+            return false;
+        }
+        //the radical should be the last factor in its term to be simple
+        if(this.parent.factors.indexOf(this) != this.parent.factors[this.parent.factors.length - 1]) {
+            return false;
+        }
+        return true;
+    }
+    pronounceSimple() {
+        let text = " the "
+        let index = "square"
+        if(this.exponent) {
+            index = nth(this.exponent.terms[0].factors[0].base.number);
+        }
+        return text + index + " root of " + this.radicand.terms[0].factors[0].pronounceSimple();
+    }
+    findFunction() {
+        let func = this.radicand.findFunction();
+        if(func) {
+            return func;
+        }
+        if(this.exponent) {
+            let func = this.exponent.findFunction();
+            if(func) {
+                return func;
+            }
+        }
+        return false;
+    }
+}
+class Radicand extends Expression {
+    constructor(parent, elementArray, quotient) {
+        super(parent, elementArray);
+        this.type = "radicand";
+        this.isTerm = false;
+        this.isExpression = true;
+        this.isFactor = false;
+    }
+    guide() {
+        let text = super.guide();
+        return text + super.guideUp();
+    }
+}
+class Integral extends Factor {
+    constructor(parent, elementArray, isDefinite) {
+        super(parent, elementArray);
+        this.isTerm = false;
+        this.isExpression = false;
+        this.isFactor = true;
+        this.type = "integral";
+        this.isDefinite = isDefinite;
+        let i = 0;
+        if(this.isDefinite) {
+            this.lowerLimit = new Expression(this, [elementArray[0].children[1]]);
+            this.upperLimit = new Expression(this, [elementArray[0].children[2]]);;
+            i = 1;
+        }
+        this.varOfInt = new Variable(this, elementArray.slice(elementArray.length - 1));
+        this.integrand = new Integrand(this, elementArray.slice(i, elementArray.length - 2));
+        
+    }
+    describe() {
+        let intro = super.guideIntro();
+        if(this.isSimple()) {
+            return intro + this.pronounceSimple();
+        }
+        if(this.isDefinite) {
+            if(this.lowerLimit.isSimple() && this.upperLimit.isSimple()) {
+                return intro + "the definite integral from " + this.varOfInt.pronounceSimple() + " equals " + this.lowerLimit.pronounceSimple() + " to " + this.varOfInt.pronounceSimple() + " equals " + this.upperLimit.pronounceSimple() + ". ";
+            }
+        }
+        return intro + "an indefinite integral over " + this.varOfInt + ". ";
+    }
+    guide(){
+        let text = "To explore " + firstLastOnlyNth(0, this.integrand.terms.length) + " term in this integrand, press the down arrow. ";
+        text = text + super.leftRightGuide();
+        return text + super.guideUp();
+    }
+    getDown() {
+        if(this.integrand.terms.length > 1) {
+            return this.integrand;
+        }
+        return this.integrand.getDown();
+    }
+    isSimple() {
+        if(this.isDefinite) {
+            return this.integrand.isSimple() && this.lowerLimit.isSimple() && this.upperLimit.isSimple();
+        }
+        return this.integrand.isSimple();
+    }
+    pronounceSimple() {
+        if(this.isDefinite) {
+            return "the integral of " + this.integrand.pronounceSimple() + " from " + this.varOfInt.pronounceSimple() + " equals " + this.lowerLimit.pronounceSimple() + " to " + this.varOfInt.pronounceSimple() + " equals " + this.upperLimit.pronounceSimple() + ". ";
+        }
+        return "The integral over " + this.varOfInt.pronounceSimple() + " of " + this.integrand.pronounceSimple() + ". ";
+    }
+}
+class Integrand extends Expression {
+    constructor(parent, elementArray) {
+        super(parent, elementArray);
+        this.type = "integrand";
+        this.isTerm = false;
+        this.isExpression = true;
+        this.isFactor = false;
+    }
+    guide() {
+        return super.guide() + " To explore the integral operating on this integrand, press the up arrow. ";
+    }
+}
+class Derivative extends Factor {
+    constructor(parent, elementArray, usesLeibniz) {
+        super(parent, elementArray);
+        this.isTerm = false;
+        this.isExpression = false;
+        this.isFactor = true;
+        this.type = "derivative";
+        this.usesLeibniz = usesLeibniz;
+        this.expression = null;
+        this.depVar = null;
+        if(this.usesLeibniz) {
+            let mfrac = elementArray.slice(0, 1)[0];
+            let num = this.reduce([mfrac.children[0]]);
+            let den = this.reduce([mfrac.children[1]]);
+            this.indVar = new Variable(this, [den[1]]);
+            if(num.length == 2) {
+                this.depVar = new Variable(this, [num[1]]);
+            } else if(num.length == 1) {
+                this.expression = new Expression(this, elementArray.slice(1));
+            } else {
+                this.expression = new Expression(this, num.slice(1));
+            }
+        //if this uses prime notation
+        } else {
+            let msup = elementArray.slice(0, 1)[0];
+            //if we have differentiated grouping that is using prime notation
+            if(elementArray.length == 1) {
+                let expressionArray = this.reduce([msup.children[0]]);
+                expressionArray = expressionArray.slice(1, expressionArray.length - 1);
+                this.expression = new Expression(this, expressionArray);
+                this.indVar = this.expression.findFunction().argument;
+            //if we have a named function that is using prime notation as in f'(x)
+            } else {
+                let functionArray = [msup.children[0], ...elementArray.slice(1)];
+                this.function = new Func(this, functionArray);
+                this.indVar = this.function.argument;
+            }
+        }
+        if(this.expression && this.expression.terms.length == 1 && this.expression.terms[0].factors.length == 1 && this.expression.terms[0].factors[0].constructor.name == "Grouping") {
+            this.expression = this.expression.terms[0].factors[0].base;
+            this.expression.parent = this;
+        }
+    }
+    describe() {
+        let intro = super.guideIntro();
+        let y = false;
+        let item;
+        if(this.depVar) {
+            y = this.depVar.pronounceSimple();
+            item = "a dependent variable";
+        }
+        if(this.expression){
+            item = "an expression";
+            if(this.expression.isSimple()) {
+                y = this.expression.pronounceSimple();
+            }
+        }
+        if(this.function) {
+            item = "a function";
+            if(this.function.isSimple()) {
+                y = this.function.pronounceSimple();
+            }
+        }
+        if(y) {
+            return intro + "the derivative of " + y + " with respect to " + this.indVar.pronounceSimple() + ". ";
+        }
+        return intro + "the derivative of " + item + " with respect to " + this.indVar.pronounceSimple() + ". ";
+    }
+    guide(){
+        let text = ""
+        if(this.expression) {
+            text = "To explore " + firstLastOnlyNth(0, this.expression.terms.length) + " term in this derivative's expression, press the down arrow. "
+        }
+        text = text + super.leftRightGuide();
+        return text + super.guideUp();
+    }
+    getDown() {
+        if(this.expression) {
+            if(this.expression.terms.length == 1) {
+                if(this.expression.terms[0].factors.length == 1) {
+                    if(this.expression.terms[0].factors[0].constructor.name == "Grouping") {
+                        if(this.expression.terms[0].factors[0].base.terms.length > 1) {
+                            return this.expression.terms[0].factors[0].base;
+                        }
+                        return this.expression.terms[0].factors[0].base.getDown();
+                    }
+                    return this.expression.terms[0].factors[0];
+                }
+                return this.expression.terms[0];
+            }
+            return this.expression;
+        }
+    }
+    isSimple() {
+        return false;
+    }
+}
+class Func extends Factor {
+    constructor(parent, elementArray) {
+        super(parent, elementArray);
+        this.isTerm = false;
+        this.isExpression = false;
+        this.isFactor = true;
+        this.type = "function";
+        this.name = elementArray[0].textContent;
+        this.argument = new Expression(this, elementArray.slice(2, elementArray.length - 1));
+    }
+    findFunction() {
+        return this;
+    }
+    describe() {
+        let intro = super.guideIntro();
+        intro = intro + "the function " + pronounceFunction[this.name];
+        if(this.isSimple()) {
+            return intro + " of " + this.argument.pronounceSimple() + ". ";
+        }
+        return intro + ". ";
+    }
+    guide(){
+        let text = "To explore the expression in this function's argument, press the down arrow. ";
+        text = text + super.leftRightGuide();
+        return text + super.guideUp();
+    }
+    getDown() {
+        if(this.argument.terms.length > 1) {
+            return this.argument;
+        }
+        return this.argument.getDown();
+    }
+    isSimple() {
+        if(this.argument.terms.length > 1) {
+            return false;
+        }
+        if(this.argument.terms[0].factors.length > 1) {
+            return false;
+        };
+        return true;
+    }
+    pronounceSimple() {
+        return pronounceFunction[this.name] + " of " + this.argument.pronounceSimple();
+    }
+}
+class Limit extends Factor {
+    constructor(parent, elementArray) {
+        super(parent, elementArray);
+        this.isTerm = false;
+        this.isExpression = false;
+        this.isFactor = true;
+        this.type = "limit";
+        this.variable = new Variable(this, [this.reduce([elementArray[0].children[1]])[0]]);
+        let targetElement = this.reduce([elementArray[0].children[1]])[2];
+        if(targetElement.tagName == "mi") {
+            this.target = new Variable(this, [targetElement]);
+        }
+        if(targetElement.tagName == "mn") {
+            this.target = new Constant(this, [targetElement]);
+        }
+        this.expression = new Expression(this, elementArray.slice(1));
+    }
+    describe() {
+        let intro = super.guideIntro();
+        intro = intro + "the limit as " + this.variable.pronounceSimple() + " approaches " + this.target.pronounceSimple() + " of "
+        if(this.expression.isSimple()) {
+            return intro + this.expression.pronounceSimple() + ". ";
+        }
+        return intro + "an expression. ";
+    }
+    guide(){
+        let text = "To explore " + firstLastOnlyNth(0, this.expression.terms.length) + " term in this limit's expression, press the down arrow. ";
+        return text + super.leftRightGuide() + super.guideUp();
+    }
+    getDown() {
+        if(this.expression.terms.length > 1) {
+            return this.expression;
+        }
+        return this.expression.getDown();
+    }
+    isSimple() {
+        return this.expression.isSimple();
+    }
+}
+class Step extends MathObject{
+    constructor(element) {
+        super(null, [element]);
+        this.expressions = [];
+        let stepArray = Array.from(this.element.children);
+        stepArray = this.reduce(stepArray);
+        const isComparator = element => element.tagName == "mo" && equationSymbols.some(item => element.textContent.toLowerCase() == item);
+        let comparators = stepArray.filter(isComparator);
+        let leftComparator = null;
+        let leftIndex = -1;
+        if(comparators[0] == stepArray[0]) {
+            leftComparator = comparators.splice(0, 1)[0];
+        }
+        for(let rightComparator of comparators) {
+            let rightIndex = stepArray.indexOf(rightComparator);
+            this.expressions.push(new StepExpression(this, stepArray.slice(leftIndex + 1, rightIndex), leftComparator, rightComparator));
+            leftComparator = rightComparator;
+            leftIndex = rightIndex;
+        }
+        this.expressions.push(new StepExpression(this, stepArray.slice(leftIndex + 1), leftComparator));
+        this.type = "expression";
+        if(this.expressions.length == 2) {
+            this.type = equationSymbols.some(symbol => symbol == this.expressions[0].rightComparator.textContent) ? "equation" : "inequality";
+        }
+        if(this.expressions.length > 2) {
+            this.type = "statement";
+        }
+    }
+    describe() {
+        let text = "You have encountered a math " + this.type + " ";
+        if(this.isSimple()) {
+            return text + "which is " + this.pronounceSimple();
+        }
+        if(this.expressions.length == 1) {
+            text = text + "containing " + pluralize("term", this.expressions[0].terms.length) + ". ";
+            return text;
+        }
+        if(this.expressions.length == 2) {
+            let comparator = this.expressions[0].rightComparator.textContent;
+            if(comparator != "=") {
+                text = text + "comparing two expressions. The expression on the left is " + leftCompDict[comparator] + " the expression on the right. "
+            } else 
+            return text;
+        }
+        let allEqual = true
+        let i = 0;
+        while(i < this.expressions.length - 1 && allEqual) {
+            if(this.expressions[i].rightComparator != "=") {
+                allEqual = false;
+            }
+            i++;
+        }
+        text = text + "that contains " + this.expressions.length + " expressions that "
+        if(allEqual) {
+            text = text + "are all equal to each another. ";
+        } else {
+            text = text + "are compared to each other. ";
+        }
+        return text;
+    }
+    guide() {
+        //if this step has only 1 expression
+        let intro = "To explore ";
+        let press = " press the down arrow. "
+        let text = intro + firstLastOnlyNth(0, this.expressions[0].terms.length) + " term in this expression," + press;
+        if(this.expressions.length == 2) {
+            text = intro + "the left hand side of this ";
+            let object = "inequality";
+            if(this.expressions[0].rightComparator.textContent == "=") {
+                object = "equation";
+            }
+            text = text + object + press;
+        } else if(this.expressions.length > 2) {
+            text = intro + "the first expression in this statement" + press
+        }
+        if(getNextVisible()) {
+            text = text + " To skip over this expression and keep reading this page, press the right arrow.";
+        }
+        if(getPrevVisible()) {
+            text = text +  " To hear the item preceding this math, press the left arrow ";
+        }
+        return text;
+    }
+    getDown() {
+        if(this.expressions[0].terms.length > 1) {
+            return this.expressions[0];
+        }
+        return this.expressions[0].getDown();
+    }
+    getUp() {
+        return "You cannot explore upwards from this math. You can only go down, left, or right."
+    }
+    getRight() {
+        if(!getNextVisible()) {
+            return false;
+        }
+        advanceToNextChild();
+    }
+    getLeft() {
+        backup();
+    }
+    isSimple() {
+        for(let expression of this.expressions) {
+            if(!expression.isSimple()) {
+                return false;
+            }
+        }
+        return true;
+    }
+    pronounceSimple() {
+        let text = "";
+        for(let expression of this.expressions) {
+            text = text + expression.pronounceSimple() + " ";
+            if(expression.rightComparator) {
+                text = text + " is " + leftCompDict[expression.rightComparator.textContent] + " ";
+            }
+        }
+        return text;
+    }
+}
+let equationSymbols = ["=", "≠", "≈", "≃", "≅", "≡", ">", "<", "≤", "≥"];
+let equalSymbols = ["=", "∼", "≈", "≃", "≅", "≡"];
+let termSymbols = ["+", "-", "–", "−", "±", ""];
+let trigFunctionNames = ["sin", "cos", "tan", "sec", "csc", "cot"]
+let functionNames = ["f", "g", "h", "sin", "cos", "tan", "sec", "csc", "cot", "ln", "log", "exp", "sinh", "cosh", "tanh", "sech", "csch", "coth", "arcsin", "arccos", "arctan", "arcsec", "arccsc", "arccot"];
+let pronounceFunction = {f: "eff", g: "gee", h: "aych", sin: "sign", cos: "cosine", tan: "tangent", sec: "secant", csc: "cosecant", cot: "cotangent", ln: "natural logarithm", log: "log base ten", exp: "exponential", sinh: "hyperbolic sign", cosh: "hyperbolic cosine", tanh: "hyperbolic tangent", sech: "hyperbolic secant", csch: "hyperbolic cotangent", arcsin: "arc sign", arccos: "arc cosine", arctan: "arc tangent", arcsec: "arc secant", arccsc: "arc cosecant", arccot: "arc cotangent"}
+let leftCompDict = {"=": "equal to", "≠": "not equal to", "≈": "approximately numerically equal to", "≃": "asmptotically equal to", "≅": "congruent to", "≡": "defined by", ">": "greater than", "≥": "greater than or equal to", "<": "less than", "≤": "less than or equal to" }
+let rightCompDict = {"=": "equal to", "≠": "not equal to", "≈":"approximately numerically equal to", "≃": "asymptotically equal to", "≅": "congruent to", "≡": "used to define", ">": "less than", "≥": "less than or equal to", "<": "greater than", "≤": "greater than or equal to" }
+const isOperand = element => element.tagName == "mo" && termSymbols.some(item => element.textContent == item);
+let oldFocusObject = null;
+let focusObject = document.body;
+let synth = window.speechSynthesis;
+let samantha;
+let aaron;
+// Add an event listener to the speechSynthesis object to load the voices when they arrive
+synth.addEventListener('voiceschanged', populateVoiceList);
+function populateVoiceList() {
+    const voices = synth.getVoices();
+    if (voices.length !== 0) {
+        samantha = voices.find(voice => voice.name == "Samantha");
+        aaron = voices.find(voice => voice.name == "Aaron");
+    }
+}
+let visibleTextCollection = [];
+let visIndex;
+//this parses the web page into readable sections of text and math
+function getVisibleText(element) {
+    if(element.tagName && element.tagName == "math") {
+        visibleTextCollection.push({element: element, object: new Step(element)});
+    } else if(element.nodeType == 1) {
+        if(containsTextNode(element)) {
+            for(let child of element.childNodes) {
+                if(child.nodeType == 3 && isVisible(element)) {
+                    let text = child.textContent.trim();
+                    if(text.length > 0) {
+                        visibleTextCollection.push({element: element, text: text});
+                    }
+                }
+                if(child.nodeType == 1) {
+                    if(child.tagName == "math") {
+                        visibleTextCollection.push({element: child, object: new Step(child)});
+                    } else {
+                        getVisibleText(child);
+                    }
+                }
+            }
+        } else {
+            for(let child of element.children) {
+                getVisibleText(child);
+            }
+        }
+    }
+}
+function isVisible(element) {
+    if(element.nodeType != 1) {
+        return true;
+    }
+    if (element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) {
+        // Use innerText as it generally represents the rendered text
+        if(element.innerText) {
+            const text = element.innerText.trim();
+            if (text.length > 0) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+function containsTextNode(element){
+    for(let node of element.childNodes) {
+        if(node.nodeType == 3) {
+            return true;
+        }
+    }
+    return false;
+}
+let unloaded = true;
+window.addEventListener("keydown", enableKeys, false);
+function enableKeys(event) {
+    if(unloaded) {
+        getVisibleText(document.body);
+        unloaded = false;
+    }
+    if(document.activeElement == document.body) {
+        event.preventDefault();
+    }
+    if(document.activeElement.tagName == "input") {
+        return;
+    }
+    if(synth.speaking) {synth.cancel()}
+    let key = event.key;
+    if(key == "ArrowRight" && focusObject.tagName) {
+        if(focusObject == document.body) {
+            visIndex = 0;
+            focus(visIndex);
+            return;
+        }
+        advanceToNextChild();
+        return;
+    }
+    if(key == "ArrowLeft" && focusObject.tagName) {
+        backup();
+        return;
+    }
+    if(!focusObject.tagName) {
+        if(key == "ArrowDown") {
+            let down = focusObject.getDown();
+            if(down) {
+                navagateTo(down);
+                return;
+            }
+            let text = "This is the " + focusObject.type;
+            let desc = ""
+            if(focusObject.type == "variable") {
+                desc = pronounceLetter(focusObject.base.characters);
+            }
+            if(focusObject.type == "constant") {
+                desc = integerToLiteral(focusObject.base.number);
+            }
+            text = text + " " + desc + ". You cannot explore downward from here. You can explore up";
+            let left = focusObject.getLeft();
+            let right = focusObject.getRight();
+            if(left) {
+                if(right) {
+                    text = text + ", left, or right"
+                } else {
+                    text = text + " or left";
+                }
+                
+            } else if(right) {
+                text = text + " or right";
+            }
+            text = text + " from here."
+            if(focusObject.exponent) {
+                text = text + " You can also explore this" + focusObject.type + "'s exponent by pressing the E key."
+            }
+            if(focusObject.index) {
+                text = text + " You can also explore this radical's index by pressing the E key."
+            }
+            speak(text, aaron);
+        }
+        if(key == "ArrowUp") {
+            navagateTo(focusObject.getUp());
+        }
+        if(key == "ArrowRight") {
+            let right = focusObject.getRight();
+            if(right) {
+                navagateTo(right);
+                return;
+            }
+            if(focusObject.tagName) {
+                return;
+            }
+            if(focusObject.constructor && focusObject.constructor.name == "Step") {
+                speak("You have reached the end of the page. You cannot go forward from here.", aaron);
+                return;
+            }
+            let end = focusObject;
+            if(focusObject.isTerm) {
+                end = focusObject.parent;
+            }
+            if(focusObject.isFactor) {
+                end = focusObject.parent.parent;
+            }
+            let text = "You have reached the end of this " + end.type + " so you can not explore right from here. You can explore up"
+            let left = focusObject.getLeft();
+            let down = focusObject.getDown();
+            if(left) {
+                if(down) {
+                    text = text + ", left, or down"
+                } else {
+                    text = text + " or left";
+                }
+                
+            } else if(down) {
+                text = text + " or down";
+            }
+            text = text + " from here."
+            if(focusObject.exponent) {
+                text = text + " You can also explore this" + focusObject.type + "'s exponent by pressing the E key."
+            }
+            if(focusObject.index) {
+                text = text + " You can also explore this radical's index by pressing the E key."
+            }
+            speak(text, aaron);
+        }
+        if(key == "ArrowLeft") {
+            let left = focusObject.getLeft();
+            if(left) {
+                navagateTo(left);
+                return;
+            }
+            if(focusObject.tagName) {
+                return;
+            }
+            let end = focusObject;
+            if(focusObject.isTerm) {
+                end = focusObject.parent;
+            }
+            if(focusObject.isFactor) {
+                end = focusObject.parent.parent;
+            }
+            let text = "You have reached the start of this " + end.type + " so you can not explore left from here. You can explore up"
+            let right = focusObject.getRight();
+            let down = focusObject.getDown();
+            if(right) {
+                if(down) {
+                    text = text + ", right, or down"
+                } else {
+                    text = text + " or right";
+                }
+            } else if(down) {
+                text = text + " or down";
+            }
+            text = text + " from here."
+            if(focusObject.exponent) {
+                text = text + " You can also explore this" + focusObject.type + "'s exponent by pressing the E key."
+            }
+            if(focusObject.index) {
+                text = text + " You can also explore this radical's index by pressing the E key."
+            }
+            speak(text, aaron);
+        }
+        if(key == "e" || key == "E") {
+            let exponent = focusObject.getExponent();
+            if(exponent) {
+                navagateTo(exponent);
+            } {
+                speak("This " + focusObject.type + " does not have an exponent.");
+            }
+        }
+        if(key == "i" || key == "I") {
+            let index = focusObject.getIndex();
+            if(index) {
+                navagateTo(index);
+            } {
+                speak("This " + focusObject.type + " does not have an index.");
+            }
+        }
+    }
+}
+function focus(index) {
+    let visTextItem;
+    let object;
+    if(typeof index == "number") {
+        visTextItem = visibleTextCollection[index];
+        if(visTextItem.text) {
+            object = visTextItem.element;
+        }
+        if(visTextItem.object) {
+            object = visTextItem.object;
+        }
+    } else {
+        object = index;
+    }
+    
+    if(oldFocusObject) {
+        if(focusObject.tagName) {
+            unHighlight(focusObject);
+        } else {
+            focusObject.unHighlight();
+        }
+    }
+    oldFocusObject = focusObject;
+    focusObject = object;
+    if(object.tagName) {
+        highlight(object);
+        speak(visTextItem.text, aaron);
+    } else {
+        object.highlight();
+        speak(object.describe(), samantha);
+        speak(object.guide(), aaron)
+    }
+}
+function highlight(object) {
+    object.style.setProperty("background-color", "yellow");
+}
+function unHighlight(object) {
+    object.style.setProperty("background-color", "transparent");
+}
+function navagateTo(target) {
+    if(typeof target == "string") {
+        speak(target, aaron);
+        return;
+    }
+    focus(target);
+}
+function speak(text, voice) {
+    let utterThis = new SpeechSynthesisUtterance(text);
+    if(focusObject.tagName) {
+        utterThis.addEventListener("end", advanceToNextChild, false);
+    }
+    utterThis.voice = voice;
+    synth.speak(utterThis);
+}
+function advanceToNextChild() {
+    let nextFocusObject = getNextVisible();
+    if(!nextFocusObject) {
+        speak("You have reached the end of the page. You cannot go forward from here.", aaron);
+        return;
+    }
+    visIndex++
+    focus(visIndex);
+}
+function backup() {
+    let nextFocusObject = getPrevVisible();
+    if(!nextFocusObject) {
+        speak("You have reached the start of the page. You cannot go backward from here.", aaron);
+        return;
+    }
+    visIndex--
+    focus(visIndex);
+}
+function getNextVisible() {
+    if(visIndex > visibleTextCollection.length - 1) {
+        return false;
+    }
+    return visibleTextCollection[visIndex + 1];
+}
+function getPrevVisible() {
+    if(visIndex == 0) {
+        return false;
+    }
+    return visibleTextCollection[visIndex - 1];
+}
+//creates a text snippet such as "one term" or "four factors"
+function pluralize(thing, num) {
+    if(num === 1) {
+        return "one " + thing
+    } else {
+        return integerToLiteral(num) + " " + thing + "s"
+    }
+}
+//describes where an object is relative to its siblings
+function firstLastOnlyNth(index, total) {
+    if(total === 1) {
+            return "the only";
+        } else {
+            if (index === total - 1) {
+                return "the last";
+            } else if(index == 0) {
+                return "the first";
+            }
+                else {
+                return "the " + nth(index + 1);
+            }
+        }
+}
+//creates a text snippet that converts 1 to first, 2 to second, etc.
+function nth(position) {
+    var dictionary = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth", "eleventh", "twelfth", "thirteenth", "fourteenth", "fifteenth", "sixteenth", "seventeenth", "eighteenth", "nineteenth"];
+    if(position === 0) {
+        return "zero eth"
+    }
+    if (position < 20) {
+        return dictionary[position - 1];
+    }
+    if (position < 100) {
+        //if the number ends with a zero
+        if (position % 10 === 0) {
+            return position.toString() + "eth";
+        } else {
+            var tensplace = Math.floor(position / 10);
+            return tens[tensplace - 2] + " " + dictionary[position - 10 * tensplace - 1];
+        }
+    }
+    if(position < 1000) {
+        let hundredsPlace = Math.floor(position/100)
+        if(position % 100 == 0) {
+            return ones[hundredsPlace] + " hundredth";
+        } else {
+            return ones[hundredsPlace] + " hundred and " + nth(position - 100 * hundredsPlace);
+        }
+    }
+    if(position < 1000000000000000000) {
+        let large = 1000 * Math.floor(position / 1000);
+        let small = position - large;
+        return integerToLiteral(large) + " " + nth(small);
+    }
+}
+const ones = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"];
+const tens = ["twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
+const orders = [" thousand", " million", " billion", " trillion", " quadrillion"];
+function integerToLiteral(number) {
+    if(number < 20) {
+        return ones[number];
+    } else if (number < 100) {
+        let text = tens[Math.floor(number/10) - 2];
+        if(number % 10 !== 0) {
+            text = text + "-" + integerToLiteral(number - Math.floor(number/10)*10);
+        }
+        return text;
+    } else if (number < 1000) {
+        let text = ones[Math.floor(number/100)] + " hundred";
+        if (number % 100 !== 0) {
+            text = text + " and " + integerToLiteral(number - Math.floor(number/100)*100);
+        }
+        return text;
+    } else if (number < 1000000000000000000) {
+        let i = Math.floor(Math.log10(number)/3) - 1;
+        let order = Math.pow(10, (i + 1) * 3);
+        let text = integerToLiteral(Math.floor(number/order)) + orders[i];
+        if (number % order !== 0) {
+            let remainder = number - Math.floor(number/order)*order
+            if (remainder > 0) {
+                if (remainder < 100) {
+                    text = text + " and " + integerToLiteral(remainder);
+                } else {
+                    text = text + ", " + integerToLiteral(remainder);
+                }
+            }
+        }
+        return text;
+    } else {
+        return number.toString();
+    }
+}
+//creates a text snippet to enable the correct pronounciation of letters
+function pronounceLetter(letter) {
+    letter = letter.toLowerCase()
+    var say = {"a":"eigh", "b":"bee", "c":"see", "d":"dee", "e":"E", "f":"ef", "g":"gee", "h":"aych", "i":"eye as in island", "j":"J", "k":"K", "l":"L", "m":"M", "n":"N", "o":"O", "p":"pea", "q":"cue", "r":"are", "s":"s", "t":"tea", "u":"you", "v":"vee", "w":"double you", "x":"x", "y":"y", "z":"zee", "α":"α", "β":"β", "γ":"γ", "θ":"theta", "π":"pie", "σ":"sigma", "φ":"φ"}
+    let text = say[letter];
+    if(text) {
+        return text;
+    }
+    return letter;
+}
