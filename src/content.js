@@ -645,7 +645,23 @@ class Factor extends MathObject {
         if(up.type == "function" || up.type == "limit" || up.type == "derivative") {
             doing = " operating on";
         }
-        return "To explore the " + up.type + doing + " this " + this.type + ", press the up arrow.";
+        let grandChild = this;
+        let child = this.parent;
+        if (this.quotient) {
+            child = this.quotient;
+        }
+        while(child != up) {
+            grandChild = child;
+            child = grandChild.parent;
+            if(grandChild.quotient) {
+                child = grandChild.quotient;
+            }
+        }
+        let x = grandChild.type;
+        if(up.constructor.name == "Grouping") {
+            x = "term";
+        }
+        return "To explore the " + up.type + doing + " this " + x + ", press the up arrow.";
     }
     getRight() {
         if(!this.parent.factors) {
@@ -1191,12 +1207,28 @@ class Variable extends Factor{
         return text + super.guideUp();
     }
     isSimple() {
-        return !this.exponent || (this.exponent && (this.exponent.isJustANumber() || this.exponent.isARationalNumber()));
+        if(!this.exponent) {
+            return true;
+        }
+        let exponent = this.exponent;
+        if(exponent) {
+            if(exponent.isJustANumber() || exponent.isARationalNumber()) {
+                return true;
+            }
+            if(exponent.terms.length == 1 && exponent.terms[0].factors.length == 1 && (exponent.terms[0].factors[0].constructor.name == "Variable")) {
+                return true;
+            }
+        }
+        return false;
     }
     pronounceSimple() {
         let base = pronounceLetter(this.base.characters);
         if(this.exponent) {
-            return base + " " + this.exponent.pronounceSimple();
+            let exponent = this.exponent;
+            if(exponent.isJustANumber() || exponent.isARationalNumber()) {
+                return base + " " + this.exponent.pronounceSimple();
+            }
+            return base + " raised to the " + this.exponent.pronounceSimple();
         }
         return base;
     }
@@ -1269,12 +1301,28 @@ class Constant extends Factor {
         return !this.exponent;
     }
     isSimple() {
-        return !this.exponent || (this.exponent && (this.exponent.isJustANumber() || this.exponent.isARationalNumber()));
+        if(!this.exponent) {
+            return true;
+        }
+        let exponent = this.exponent;
+        if(exponent) {
+            if(exponent.isJustANumber() || exponent.isARationalNumber()) {
+                return true;
+            }
+            if(exponent.terms.length == 1 && exponent.terms[0].factors.length == 1 && (exponent.terms[0].factors[0].constructor.name == "Variable")) {
+                return true;
+            }
+        }
+        return false;
     }
     pronounceSimple() {
         let base = integerToLiteral(this.base.number)
         if(this.exponent) {
-            return base + " " + this.exponent.pronounceSimple() + " ";
+            let exponent = this.exponent;
+            if(exponent.isJustANumber() || exponent.isARationalNumber()) {
+                return base + " " + this.exponent.pronounceSimple();
+            }
+            return base + " raised to the " + this.exponent.pronounceSimple();
         }
         return base;
     }
@@ -2215,7 +2263,7 @@ function enableKeys(event) {
             let exponent = focusObject.getExponent();
             if(exponent) {
                 navagateTo(exponent);
-            } {
+            } else {
                 speak("This " + focusObject.type + " does not have an exponent.");
             }
         }
@@ -2223,7 +2271,7 @@ function enableKeys(event) {
             let index = focusObject.getIndex();
             if(index) {
                 navagateTo(index);
-            } {
+            } else {
                 speak("This " + focusObject.type + " does not have an index.");
             }
         }
