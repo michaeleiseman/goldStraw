@@ -2065,6 +2065,8 @@ let visIndex;
 function getVisibleText(element) {
     if(element.tagName && element.tagName == "math") {
         visibleTextCollection.push({element: element, object: new Step(element)});
+    } else if(element.tagName == "A") {
+        visibleTextCollection.push({element: element, text: element.innerText});
     } else if(element.nodeType == 1) {
         if(containsTextNode(element)) {
             for(let child of element.childNodes) {
@@ -2077,6 +2079,8 @@ function getVisibleText(element) {
                 if(child.nodeType == 1) {
                     if(child.tagName == "math") {
                         visibleTextCollection.push({element: child, object: new Step(child)});
+                    } else if(child.tagName == "A") {
+                        visibleTextCollection.push({element: child, text: child.innerText});
                     } else {
                         getVisibleText(child);
                     }
@@ -2112,6 +2116,22 @@ function containsTextNode(element){
     }
     return false;
 }
+let itemNotFound = true;
+let foundIndex = -1;
+function lookForItem(element) {
+    let i = 0;
+    while(i < element.children.length && itemNotFound) {
+        let child = element.children[i];
+        let index = visibleTextCollection.findIndex(item => item.element == child);
+        if(index != -1) {
+            itemNotFound = false;
+            foundIndex = index;
+        } else {
+           lookForItem(child);
+        }
+        i++;
+    }
+}
 let unloaded = true;
 window.addEventListener("keydown", enableKeys, false);
 function enableKeys(event) {
@@ -2138,6 +2158,24 @@ function enableKeys(event) {
     }
     if(key == "ArrowLeft" && focusObject.tagName) {
         backup();
+        return;
+    }
+    if(key == "Enter" && focusObject.tagName == "A") {
+        let href = focusObject.getAttribute("href");
+        if(href.charAt(0) == "#") {
+            itemNotFound = true;
+            foundIndex = -1;
+            let index = visibleTextCollection.findIndex(item => item.element.id == href.substring(1));
+            if(index != -1) {
+                focus(index);
+            } else {
+                lookForItem(document.getElementById(href.substring(1)));
+                if(foundIndex >= 0) {
+                    focus(foundIndex);
+                }
+            }
+        }
+        window.location.href = href;
         return;
     }
     if(!focusObject.tagName) {
@@ -2281,7 +2319,8 @@ function focus(index) {
     let visTextItem;
     let object;
     if(typeof index == "number") {
-        visTextItem = visibleTextCollection[index];
+        visIndex = index;
+        visTextItem = visibleTextCollection[visIndex];
         if(visTextItem.text) {
             object = visTextItem.element;
         }
@@ -2325,7 +2364,7 @@ function navagateTo(target) {
 }
 function speak(text, voice) {
     let utterThis = new SpeechSynthesisUtterance(text);
-    if(focusObject.tagName) {
+    if(focusObject.tagName && focusObject.tagName != "A") {
         utterThis.addEventListener("end", advanceToNextChild, false);
     }
     utterThis.voice = voice;
