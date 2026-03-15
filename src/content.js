@@ -2025,6 +2025,9 @@ class Step extends MathObject{
         }
         return true;
     }
+    isTooSimple() {
+        return this.expressions.length == 1 && this.expressions[0].terms.length == 1 && this.expressions[0].terms[0].factors.length == 1 && this.expressions[0].terms[0].factors[0].constructor.name == "Variable" && !this.expressions[0].terms[0].factors[0].exponent;
+    }
     pronounceSimple() {
         let text = "";
         for(let expression of this.expressions) {
@@ -2065,7 +2068,7 @@ let visIndex;
 function getVisibleText(element) {
     if(element.tagName && element.tagName == "math") {
         visibleTextCollection.push({element: element, object: new Step(element)});
-    } else if(element.tagName == "A") {
+    } else if(element.tagName == "A" && isVisible(element)) {
         visibleTextCollection.push({element: element, text: element.innerText});
     } else if(element.nodeType == 1) {
         if(containsTextNode(element)) {
@@ -2079,7 +2082,7 @@ function getVisibleText(element) {
                 if(child.nodeType == 1) {
                     if(child.tagName == "math") {
                         visibleTextCollection.push({element: child, object: new Step(child)});
-                    } else if(child.tagName == "A") {
+                    } else if(child.tagName == "A" && isVisible(child)) {
                         visibleTextCollection.push({element: child, text: child.innerText});
                     } else {
                         getVisibleText(child);
@@ -2342,11 +2345,18 @@ function focus(index) {
     focusObject = object;
     if(object.tagName) {
         highlight(object);
-        speak(visTextItem.text, aaron);
+        speak(visTextItem.text, samantha);
+        if(object.tagName == "A") {
+            speak("To jump to " + visTextItem.text + " press the return key. To continue reading this page, press the right arrow.", aaron);
+        }
     } else {
         object.highlight();
+        if(object.expressions && object.isTooSimple()) {
+            speak(object.expressions[0].terms[0].factors[0].pronounceSimple());
+            return;
+        }
         speak(object.describe(), samantha);
-        speak(object.guide(), aaron)
+        speak(object.guide(), aaron);
     }
 }
 function highlight(object) {
@@ -2364,7 +2374,7 @@ function navagateTo(target) {
 }
 function speak(text, voice) {
     let utterThis = new SpeechSynthesisUtterance(text);
-    if(focusObject.tagName && focusObject.tagName != "A") {
+    if((focusObject.tagName && focusObject.tagName != "A") || (focusObject.expressions && focusObject.isTooSimple())) {
         utterThis.addEventListener("end", advanceToNextChild, false);
     }
     utterThis.voice = voice;
